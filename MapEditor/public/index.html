@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Tile Map-Editor</title>
+    <!-- Meta -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Freewill solution tilemap editor">
+    <meta name="keywords" content="freewill solutions, tilemap editor, tilemap ">
+
+    <link rel="preload" href="static/css/bootstrap.min/cached" as="style" />
+    <link rel="preload" href="static/js/jquery.min/cached" as="script" />
+    <link rel="preload" href="static/js/angular.min/cached" as="script" />
+    <link rel="preload" href="static/js/popover.min/cached" as="script" />
+    <link rel="preload" href="static/js/bootstrap.min/cached" as="script" />
+
+
+    <link rel="stylesheet" href="static/css/bootstrap.min/cached" media="screen">
+    <link rel="stylesheet" href="static/css/animate.min/noCached" media="none" onload="if(media!='all')media='all'" />
+    <link rel="stylesheet" href="static/css/themify-icon%2Fthemify-icons/cached" media="none" onload="if(media!='all')media='all'" />
+    <link rel="stylesheet" href="static/css/ion-icon%2Fionicons.min/cached" media="none" onload="if(media!='all')media='all'" />
+    <link rel="stylesheet" href="static/css/style/noCached" media="none" onload="if(media!='all')media='all'" />
+</head>
+
+<body>
+    <div ng-app="AppEditor" ng-controller="EditorController" class="container-fluid w-100 vh-100 mt-0">
+        <!-- Popup แสดง ข้อมูลแผนที่ -->
+        <fw-cloud width="270"  ng-mouseleave="$settings.formView.selectedTile.visibleOnScreen=true" ng-mouseenter="$settings.formView.selectedTile.visibleOnScreen=false">
+            <div class="d-flex flex-row f-12 mb-1">
+                <div>ทำงานกับ Layer</div>
+                <div class="ml-2 flex-fill text-danger">
+                    {{$settings.formView.activeLayer?$settings.formView.activeLayer.name:'N/A'}}<span class="ml-2 f-w-900 cursor-pointer ti-lock" fw-tooltip-a="แสดงข้อมูลเฉพาะ Layer นี้" ng-click="toggleVisibleLayer()"></span>
+                </div>
+            </div>
+            <div class="d-flex flex-row f-12 mb-1">
+                <div>Tileset</div>
+                <div class="ml-2 flex-fill text-danger">{{$settings.formView.selectedTileset?$settings.formView.selectedTileset.name:'N/A'}}</div>
+            </div>
+            <hr class="m-0 p-0" />
+            <div class="text-danger f-12">Flip: Horizontal & Vertical <strong>กดปุ่ม x </strong></div>
+            <div class="text-danger f-12 ">Rotate: 90, 180, 270 <strong>กดปุ่ม z </strong></div>
+            <hr class="m-0 p-0" />
+            <div class="text-danger f-12">*** นำเม้าส์ลาก Panel นี้หากต้องการย้ายไปยังตำแหน่งอื่น ***</div>
+        </fw-cloud>
+
+        <!-- Canvas แสดง Tile ที่ถูกเลือก -->
+        <canvas id="selectTile" class="animated fadeIn position-absolute" style="z-index:5;" ng-show="$settings.formView.selectedTile.hasTile() && $settings.formView.selectedTile.visibleOnScreen"></canvas>
+
+
+        <div class="border">
+            <div class="p-2 top-menu-bar bg-light position-fixed text-dark border-bottom shadow-sm">
+                <div class="d-flex flex-row">
+                    <div>
+                        <fw-icon class="f-20 f-w-900 text-success border-right" icon="ti-map-alt" ng-click="loadMap()" tooltip-deprecate="<strong class='text-danger'>คลิกที่นี่</strong> โหลดไฟล์แผนที่ เพื่อนำมาแก้ไข">
+                            <div class="d-md-block f-8 d-none">โหลดแผนที่</div>
+                        </fw-icon>
+                    </div>
+                    <div>
+                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-share" ng-click="exportMap()" tooltip-deprecate="ดาวน์โหลดไฟล์แผนที่ <strong class='text-danger'>จะโหลดได้เฉพาะมีการนำเข้าแผนที่แล้วเท่านั้น</strong>" ng-class="{'text-success': $settings.map.isReady, 'text-muted': !$settings.map.isReady}">
+                            <div class="d-md-block f-8 d-none">ดาวน์โหลด</div>
+                        </fw-icon>
+                    </div>
+                    <div>
+                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-panel" ng-click="$settings.formView.visibleMapProperty=!$settings.formView.visibleMapProperty" tooltip-deprecate="แสดงคุณสมบัติของแผนที่ เช่น Layer, Tilesets เป็นต้น" ng-class="{'text-success': $settings.map.isReady, 'text-muted': !$settings.map.isReady}">
+                            <div class="d-md-block f-8 d-none">คุณสมบัติแผนที่</div>
+                        </fw-icon>
+                    </div>
+                    <div class="flex-fill mr-auto">&nbsp;</div>
+                    <div class="d-none f-12 d-md-inline-block text-danger pt-2">{{$settings.formView.statusText}}</div>
+                </div>
+            </div>
+            <div class="body-container body-container-mt-41 position-relative h-inherit">
+                <div class="d-flex flex-column flex-md-row h-inherit">
+                    <!-- map tools -->
+                    <div class="border-right pt-0 pt-md-4 bg-light">
+                        <div class="d-flex flex-row flex-md-column">
+                            <div><a href="javascript:void(0)" ng-click="reloadMap()" class="left-menu-item shadow-sm ti-reload" ng-class="{'text-muted': $settings.tileMapJson === ''}""><span
+                                    class=" d-block mt-1 f-12">รีเซ็ต</span></a></div>
+                            <div><a href="javascript:void(0)" class="left-menu-item shadow-sm ti-save" ng-class="{'text-muted': $settings.tileMapJson===null}"><span class="d-block mt-1 f-12">บันทึก</span></a></div>
+                            <div><a href="javascript:void(0)" class="left-menu-item shadow-sm ti-power-off"><span class="d-block mt-1 f-12">ออก</span></a></div>
+                        </div>
+                    </div>
+
+                    <!-- map canvas -->
+                    <div class="pl-2 pt-3 pb-2 flex-grow-1 editor-container">
+                        <div class="w-100">
+                            <canvas id="mapCanvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Map Property (Tilesets & Layers) -->
+                <div id="mapPropertyPanel" ng-mouseleave="$settings.formView.visibleMapProperty=$settings.autoHideMapProperty!=='Y' || $settings.formView.resizingMapProperty;$settings.formView.selectedTile.visibleOnScreen=true" ng-mouseenter="$settings.formView.selectedTile.visibleOnScreen=false" class="position-absolute shadow-sm w-100 p-2 pt-3 bg-light animated slideInLeft overflow-auto no-scrollbar d-none" ng-class="{'d-none': !$settings.formView.visibleMapProperty}" style="width:auto;max-width:350px;top:0px;left:0px;height:calc(100vh - 45px);">
+                    <!-- Resize panel -->
+                    <div id="resizeMapPropertyPanel" ng-mousedown="$settings.formView.resizingMapProperty=true" class="bg-dark cursor-col-resize position-absolute d-none d-md-inline-block" style="right:0;top:0;width:4px;max-width:4px;min-width:4px;height:calc(100% + 155px)">&nbsp;</div>
+                    <div class="d-flex flex-row">
+                        <div class="flex-fill mr-auto f-w-900 f-16">Tilesets:</div>
+                        <div>
+                            <input type="checkbox" ng-model="$settings.autoHideMapProperty" ng-true-value="'Y'" ng-false-value="'N'"><span class="f-12 mt-n1 text-danger">&nbsp;ปิดอัตโนมัติ</label>
+                        </div>
+                    </div>
+
+                    <!-- Tilesets -->
+                    <div class="mb-3">
+                        <select class="w-100 border mb-1" ng-model="$settings.formView.selectedTileset" ng-change="selectedTileset()" ng-disabled="$settings.isLoading||!$settings.tileMapJson" ng-options="item as item.name for item in $settings.tileMapJson.tilesets"></select>
+                        <div class="overflow-auto custom-scrollbar w-100 p-0 m-0 border" style="min-height:350px;max-height:350px;">
+                            <canvas id="tilesetCanvas"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Map Layers -->
+                    <div class="">
+                        <div class="d-flex flex-row border-bottom pb-2">
+                            <div class="pt-1">
+                                <h1 class="f-16 f-w-900 m-0 p-0">Layers:</h1>
+                            </div>
+                            <div class="flex-fill mr-auto ml-1"><input type="text" class="border text-dark text-left w-100" ng-model="txtFilterLayerName" placeholder="ค้นหาชื่อ Layer" /></div>
+                            <div class="d-inline-block f-w-900 animated fadeIn cursor-pointer ion-eye-disabled ml-1" fw-tooltip-a="เปิด/ปิด การแสดงผล Layer" ng-click="toggleVisibleLayer()"></div>
+                        </div>
+                        <div class="shadown-sm overflow-auto custom-scrollbar no-button-scrollbar vh-100" style="max-height:350px;">
+                            <table class="w-100 m-0 p-0 f-16">
+                                <tr ng-repeat="item in $settings.map.mapLayers|filter:{name:txtFilterLayerName}" ng-class="{'text-muted': !item.visible, 'text-success f-w-900': item.isActive}">
+                                    <td style="width:auto;" class="border-right cursor-pointer" fw-tooltip-a="เลือก Layer เพื่อแก้ไขแผนที่" ng-click="setActiveLayer(item)">{{item.name}}</td>
+                                    <td style="width:56px;max-width:56px;min-width:56px;" class="text-center">
+                                        <div class="d-inline-block f-w-900 animated fadeIn cursor-pointer" ng-click="toggleVisibleLayer(item)" ng-class="{'ion-eye': item.visible, 'ion-eye-disabled': !item.visible}"></div>
+                                        <div class="d-inline-block ti-pencil-alt cursor-pointer" ng-click="editTileName(item)"></div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="static/js/jquery.min/cached"></script>
+    <script src="static/js/angular.min/cached"></script>
+    <script src="static/js/popover.min/noCached"></script>
+    <script src="static/js/bootstrap.min/noCached"></script>
+    <script src="static/js/app.editor/noCached"></script>
+</body>
+
+</html>

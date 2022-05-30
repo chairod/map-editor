@@ -1,0 +1,18 @@
+{
+    "app":{
+        "path":{
+            "tileset": "/static/tileset/images",
+            "map": "/static/map",
+            "mapBackup": "/static/map/backup"
+        },
+        "secure":{
+            "simpleAuthenCode": "freewillSolution"
+        },
+        "server":{
+            "port": 3000,
+            "allowHttpVerbs": "POST, GET",
+            "allowHttpOrigin": "*",
+            "apiBaseRoute": "/api/map-editor"
+        }
+    }
+}

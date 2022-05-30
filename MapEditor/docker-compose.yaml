@@ -1,0 +1,15 @@
+version: "3.5"
+services:
+  hello:
+    image: thecodingmachine/nodejs:14
+    environment:
+      HTTP_PORT: "8080"
+      SIGNIN_URL: "https://editor-devvoffice.freewillsolutions.com"
+      MESSAGE_URL: "https://editor-devvoffice.freewillsolutions.com"
+      STARTUP_COMMAND_0: npm install
+    command: npm run start
+    volumes:
+      - .:/usr/src/app
+    ports:
+      - 8081:8080
+

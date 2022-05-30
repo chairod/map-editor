@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Tile Map-Editor</title>
+    <!-- Meta -->
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Freewill solution tilemap editor">
+    <meta name="keywords" content="freewill solutions, tilemap editor, tilemap ">
+
+    <link rel="stylesheet" href="static/css/bootstrap.min.css">
+    <link rel="stylesheet" href="static/css/animate.min.css"/>
+</head> 
+<body>
+    <div ng-app="CanvasApp" ng-controller="AppController" class="position-relative container-fluid">
+        <a href="javascript:void(0)" ng-click="browseTileMap()" class="text-primary">Import Tile Map</a>
+        <a class="animated fadeIn d-inline-block p-1 text-primary" ng-repeat="item in $settings.tilesetsUnknowSource"ng-click="browseTilesetImage(item)">{{item.name}}</a>
+    
+    
+        <canvas id="canvas" class="d-block" style="border: solid 1px #000;"></canvas>
+        <canvas id="canvasSelect" style="border: solid 1px #000" ng-class="{'d-none': $settings.tileset.selected.length === 0}" class="animated fadeIn position-absolute"></canvas>
+    
+        <div class="position-absolute shadow bg-light p-2 d-none" style="top:0px;right:0px;width:550px;height:100%;">
+            <select class="p-1 border d-block w-100" ng-model="$settings.formView.tileset" ng-change="drawTileset()">
+                <option value="empty">--- Tileset ---</option>
+                <option ng-repeat="item in $settings.tileMapJson.tilesets" value="{{$index}}">{{item.name}}</option>
+            </select>
+            <canvas id="canvasTileset"></canvas>
+        </div>
+    </div>
+
+
+
+    <script src="static/js/jquery.min.js"></script>
+    <script src="static/js/angular.min.js"></script>
+    <script src="static/js/mapCanvas.js"></script>
+</body>
+</html>
+
