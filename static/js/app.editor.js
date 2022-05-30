@@ -595,7 +595,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 }).run(($rootScope) => {
     $rootScope.$appSetting = {
         api: {
-            baseRoute: 'http://localhost:3000/api/map-editor'
+            baseRoute: 'https://fw-map-editor.herokuapp.com/api/map-editor'
         }
     };
 }).service('$fileReaderService', function ($q, $dialogService) {
