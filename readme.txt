@@ -5,7 +5,7 @@ P@ssw0rd1
 
 
 [deploy-site]
-    Dev:    https://editor-devvoffice.freewillsolutions.com
+    Dev:    https://editor-devvoffice.freewillsolutions.com, https://fw-map-editor.herokuapp.com/
     Prd:    https://editor-voffice.freewillsolutions.com
 
 

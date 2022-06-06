@@ -1,21 +1,35 @@
 angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout, $dialogService, $fileReaderService, $tileMapService, $tilesetService) => {
     /**
-     * กำหนดค่าพื้นฐานให้กับ 
+     * Class สำหรับจัดการ Tile ที่ถูกเลือก เพื่อวาดลงแผนที่
      * @returns 
      */
-     const TileSelectCls = function () {
+    const TileSelectCls = function (ctx) {
+        this.ctx = ctx;
         this.tiles = [];
-        this.rotate = null;
+        this.rotate = 0;
         this.flip = null;
         this.visibleOnScreen = false; // true = แสดงรายการ Tile ที่เลือกไว้ บนหน้าเว็บ
 
         const toJson = (obj) => {
             return JSON.stringify(obj);
         };
+        const renderFlipTypes = () => {
+            var flipTypes = [];
+            if(this.rotate > 0)
+                flipTypes.push($tileMapService.createFlipType($tileMapService.getRotateFlipTypeVal(), this.rotate));
+            if (this.flip !== null)
+                flipTypes.push($tileMapService.createFlipType(this.rotate === 270 ? $tileMapService.getVerticalFlipTypeVal() : this.flip));
+
+            //console.log(`flip: ${JSON.stringify(flipTypes)}`);
+            return flipTypes;
+        };
+        const isVertical = () => {
+            return this.rotate === 90 || this.rotate === 270;
+        };
 
         this.clear = () => {
             this.tiles = [];
-            this.rotate = null;
+            this.rotate = 0;
             this.flip = null;
             return this;
         };
@@ -24,24 +38,151 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         };
 
         /**
+         * วาดรายการ Tile ที่ถูกเลือกลง Canvas
+         * @param {*} ctxSource 
+         * @returns 
+         */
+        this.drawTile = (ctxSource) => {
+            if(!this.hasTile() || ctxSource === null) return;
+
+            const tileProps = this.getTileInfo();
+            var arImageData = ctxSource.getImageData(tileProps.dx, tileProps.dy, tileProps.width, tileProps.height);
+            this.ctx.canvas.width = tileProps.width;
+            this.ctx.canvas.height = tileProps.height;
+            $tileMapService.clearAllRect(this.ctx);
+            this.ctx.putImageData(arImageData, 0, 0);
+
+            // Rotate & Flip
+            var canvasRotateAndFlip = $tileMapService.rotateAndFlipImage(this.ctx.canvas, tileProps.flipTypes);
+            $tileMapService.clearAllRect(this.ctx);
+            if(this.rotate === 90 || this.rotate === 270){
+                this.ctx.canvas.width = tileProps.height;
+                this.ctx.canvas.height = tileProps.width;
+            }
+            this.ctx.drawImage(canvasRotateAndFlip, 0, 0);
+        };
+
+        /**
+         * เขียนข้อมูล Tile ที่เลือกลงไปบนแผนที่
+         * @param {*} tileset       tileset ที่ active อยู่ในปัจจุบัน
+         * @param {*} mapPoint      ตำแหน่ง x,y ของเม้าส์ที่อยู่บนแผนที่ ณ ปัจจุบัน (mousePosOnCanvas)
+         */
+        this.drawToMap = (tileset, mapPoint) => {
+            const tileInfo = this.getTileInfo();
+            var newPoint = $.extend(true, {}, mapPoint);
+            // 10 คือค่า Sensitive ลดทอนตำแหน่งของเม้าส์
+            if(isVertical()){
+                newPoint.dx -= (tileInfo.height - 10);
+                newPoint.dy -= (tileInfo.width - 10);
+            }else{
+                newPoint.dx -= (tileInfo.width - 10);
+                newPoint.dy -= (tileInfo.height - 10);
+            }
+
+            // จัดกลุ่มรูปภาพ ตาม row || column
+            // สำหรับไล่เขียนภาพจาก แถวแรก -> แถวสุดท้าย
+            const tileGroups = {};
+            for(var i=0;i<this.tiles.length;i++){
+                var key = isVertical() ? this.tiles[i].columnIndex : this.tiles[i].rowIndex;
+                if(undefined === tileGroups[key]) tileGroups[key] = [];
+                tileGroups[key].push(this.tiles[i]);
+                
+                if(this.rotate === 90) // จัดลำดับคอลัมล์ จากท้ายสุดขึ้นก่อน
+                    tileGroups[key].sort((a,b) => {
+                        if(a.rowIndex === b.rowIndex) return 0;
+                            return a.rowIndex > b.rowIndex ? -1 : 1;
+                    });
+                if(this.rotate === 180) // จัดลำดับคอลัมล์ จากท้ายสุดขึ้นก่อน
+                    tileGroups[key].sort((a,b) => {
+                        if(a.columnIndex === b.columnIndex) return 0;
+                            return a.columnIndex > b.columnIndex ? -1 : 1;
+                    });
+
+                if(this.flip !== null)
+                    tileGroups[key].sort((a,b) => {
+                        if(isVertical()){
+                            if(a.rowIndex === b.rowIndex) return 0;
+                            if(this.rotate === 90)
+                                return a.rowIndex > b.rowIndex ? 1 : -1;
+                            else 
+                                return a.rowIndex > b.rowIndex ? -1 : 1;
+                        }else{
+                            if(this.rotate === 180){
+                                if(a.columnIndex === b.columnIndex) return 0;
+                                return a.columnIndex > b.columnIndex ? 1 : -1;
+                            }else{
+                                if(a.columnIndex === b.columnIndex) return 0;
+                                return a.columnIndex > b.columnIndex ? -1 : 1;
+                            }
+                        }
+                    });
+            }
+
+            const keys = Object.keys(tileGroups);
+            if(this.rotate === 180 || this.rotate === 270){ // Reverse แถวจากล่างขึ้นบน
+                keys.sort((a,b) => {
+                    if(+a === +b) return 0;
+                    return +a > +b ? -1 : 1;
+                });
+            }
+               
+            const mapPos = seekMapPosByPoint(newPoint); // ตำแหน่ง column, row เริ่มต้นในการเขียน tile ลงบนแผนที่
+            const mapWidth = $scope.$settings.tileMapJson.width; // จำนวนคอลัมล์ของแผนที่
+            const flipTypes = renderFlipTypes();
+            const tileWidth = $scope.$settings.tileMapJson.tilewidth;
+            const tileHeight = $scope.$settings.tileMapJson.tileheight;
+            const workLayer = $scope.$settings.formView.activeLayer;
+            var index = 0;
+            do{
+                var tileItems = tileGroups[keys[index]];
+                for(var i=0;i<tileItems.length;i++){
+                    var tile = tileItems[i];
+                    var tileId = (tile.rowIndex * mapWidth + tile.columnIndex) + tileset.firstgid;
+                    var imageIndex = $tileMapService.flipTypesToImageIndex(flipTypes, tileId);
+                    var arImageData = tileset.ctx.getImageData(tile.columnIndex * tileWidth, tile.rowIndex * tileHeight, tileWidth, tileHeight);
+    
+                    workLayer.updateTileBy(mapPos.columnIndex + i, mapPos.rowIndex + index, imageIndex, arImageData);
+                }
+            }while(++index < keys.length);
+        };
+
+        /**
+         * ย้ายตำแหน่งของ Canvas ไปยังตำแหน่งต่างๆบนหน้าเว็บ
+         * @param {*} clientX 
+         * @param {*} clientY
+         */
+        this.moveTo = (clientX, clientY) => {
+            const tileInfo = this.getTileInfo();
+            var dx = clientX - tileInfo.width;
+            var dy = clientY - tileInfo.height;
+            if(isVertical()){
+                dx = clientX - tileInfo.height;
+                dy = clientY - tileInfo.width;
+            }
+            $(this.ctx.canvas).offset({top: dy, left: dx});
+
+            //$(this.ctx.canvas).offset({top: clientY, left: clientX});
+        };
+
+        /**
          * หมุนข้อมูลรูปภาพ
          * @param {*} flag  Z = หมุนภาพ, X = Flip หรือพลิกรูปภาพ
          */
         this.flipTile = (flag) => {
-            if(!flag) return this;
+            if (!flag) return this;
 
             flag = flag.toUpperCase();
             if('Z' === flag){
-                if(this.rotate === 90) this.rotate = 180;
-                else if(this.rotate === 180) this.rotate = 270;
-                else if(this.rotate === 270) this.rotate = null;
-                else this.rotate = 90;
-            }else if('X' === flag){
-                if(null === this.flip){
-                    this.flip = this.rotate !== 270 ? $tileMapService.getHorizontalFlipTypeVal() : $tileMapService.getVerticalFlipTypeVal();
+                if(this.flip === $tileMapService.getHorizontalFlipTypeVal()){
+                    if(this.rotate === 0) this.rotate = 270;
+                    else this.rotate -= 90;
                 }else{
-                    this.flip = null;
+                    this.rotate += 90;
+                    this.rotate = this.rotate === 360 ? 0 : this.rotate;
                 }
+            }else if('X' === flag){
+                if(this.flip !== null) this.flip = null;
+                else this.flip = $tileMapService.getHorizontalFlipTypeVal()
             }
 
             return this;
@@ -52,43 +193,58 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
          * @param {*} tilePos ตำแหน่ง column,row ของ tile ได้จากการเรียกใช้ฟังชันก์  seekMapPosByPoint
          */
         this.addTile = (tilePos) => {
-            if (this.tiles.map((item) => toJson(item)).indexOf(toJson(tilePos)) !== -1) 
+            if (this.tiles.map((item) => toJson(item)).indexOf(toJson(tilePos)) !== -1)
                 return false;
             this.tiles.push(tilePos);
+            //console.log(`${JSON.stringify(this.tiles)}`);
+
+            const tileInfo = this.getTileInfo();
+            var tiles = [], posY = tileInfo.dy;
+            do{
+                var posX = tileInfo.dx;
+                do{
+                    tiles.push(seekMapPosByPoint(coordinate(posX, posY)));
+                    posX += $scope.$settings.tileMapJson.tilewidth;
+                }while(posX < (tileInfo.dx + tileInfo.width));
+                posY += $scope.$settings.tileMapJson.tileheight;
+            }while(posY < (tileInfo.dy + tileInfo.height));
+            this.tiles = tiles;
             return true;
         };
 
         this.getTileInfo = () => {
-            var cols = this.tiles.map((item) => { return item.columnIndex; });
-            var rows = this.tiles.map((item) => { return item.rowIndex; });
+            var cols = this.tiles.map((item) => {
+                return item.columnIndex;
+            });
+            var rows = this.tiles.map((item) => {
+                return item.rowIndex;
+            });
             const arrayMinMaxVal = (ar, type) => {
                 ar.sort((a, b) => {
-                    if(a === b) return 0;
+                    if (a === b) return 0;
                     return a > b ? 1 : -1;
                 });
                 return 'min' === type ? ar[0] : ar[ar.length - 1];
             };
 
-            const minColIndex = arrayMinMaxVal(cols, 'min'), maxColIndex = arrayMinMaxVal(cols, 'max');
-            const minRowIndex = arrayMinMaxVal(rows, 'min'), maxRowIndex = arrayMinMaxVal(rows, 'max');
-            const tileWidth = $scope.$settings.tileMapJson.tilewidth, tileHeight = $scope.$settings.tileMapJson.tileheight;
-            
-            var point = { dx: minColIndex * tileWidth, dy: minRowIndex * tileHeight };
+            const minColIndex = arrayMinMaxVal(cols, 'min'),
+                maxColIndex = arrayMinMaxVal(cols, 'max');
+            const minRowIndex = arrayMinMaxVal(rows, 'min'),
+                maxRowIndex = arrayMinMaxVal(rows, 'max');
+            const tileWidth = $scope.$settings.tileMapJson.tilewidth,
+                tileHeight = $scope.$settings.tileMapJson.tileheight;
+
+            var point = {
+                dx: minColIndex * tileWidth,
+                dy: minRowIndex * tileHeight
+            };
             var width = (maxColIndex - minColIndex + 1) * tileWidth;
             var height = (maxRowIndex - minRowIndex + 1) * tileHeight;
-
-            const renderFlipTypes = () => {
-                var flipTypes = [];
-                if(this.rotate !== null)
-                    flipTypes.push($tileMapService.createFlipType($tileMapService.getRotateFlipTypeVal(), this.rotate));
-                if(this.flip !== null)
-                    flipTypes.push($tileMapService.createFlipType(this.flip));
-
-                return flipTypes;
-            };
-            return { 
-                dx: point.dx, dy: point.dy, 
-                width: width, height: height,
+            return {
+                dx: point.dx,
+                dy: point.dy,
+                width: width,
+                height: height,
                 flipTypes: renderFlipTypes()
             };
         };
@@ -130,14 +286,18 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
             selectedTileset: null, // ชื่อ Tileset ที่เลือกอยู่ ณ ปัจจุบัน
             tilesetSelectStart: false, // สถานะการนำเม้าส์ ไปลากบน Tileset เพื่อระบุตำแหน่งของ Tileset ที่กำลังเลือกเพื่อวาดลงบนแผนที่
-            selectedTile: new TileSelectCls(), // ข้อมูล Tile ของ tileset ที่ถูกเลือกเพื่อวาดลงบนแผนที่
-            ctxSelectedTile: document.getElementById('selectTile').getContext('2d'),
+            selectedTile: new TileSelectCls(document.getElementById('selectTile').getContext('2d')), // ข้อมูล Tile ของ tileset ที่ถูกเลือกเพื่อวาดลงบนแผนที่
 
-            activeLayer: null // Layer ปัจจุบันที่ Active อยู่
+            // Layer ปัจจุบันที่ Active อยู่
+            // ค่าจะถูกกำหนดให้เมื่อ  โหลดแผนที่เสร็จ || call setActiveLayer() 
+            activeLayer: null
         }
     };
 
 
+    const coordinate = (dx, dy) => {
+        return {dx: dx, dy: dy};
+    };
     /**
      * คำนวนตำแหน่ง x,y ของเม้าส์ที่แสดงบน canvas
      * @param {*} canvas 
@@ -151,7 +311,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         const left = mouseEvent.clientX - clientRect.left;
         const top = mouseEvent.clientY - clientRect.top;
 
-        return { dx: left, dy: top };
+        return coordinate(left, top);
     };
 
     /**
@@ -175,6 +335,20 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         const rowIndex = Math.floor(calSizeByScale(point.dy) / tileHeight);
         return { columnIndex: columnIndex, rowIndex: rowIndex };
     };
+    /**
+     * คำนวณตำแหน่งของเม้าส์ ที่อยู่บน Map
+     * @param {*} e         Event Object 
+     */
+     const mousePosOnMap = function(e){
+        if(!$scope.$settings.map.isReady) return;
+
+        // คำนวณตำแหน่งของเม้าส์ บน Map
+        var point = mousePosOnCanvas($scope.$settings.map.ctx.canvas, e);
+        const mapPos = seekMapPosByPoint(point);
+
+        $scope.$settings.map.point = point;
+        $scope.updateStatus(`[${point.dx+','+point.dy}], col: ${mapPos.columnIndex}, row: ${mapPos.rowIndex}`);
+    };
 
 
 
@@ -194,55 +368,74 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
     $scope.$settings.map.ctx.canvas.addEventListener('mousedown', (e) => {
         $scope.$apply(mousePosOnMap(e));
         $scope.$settings.map.isDragging = true;
+
+        if($scope.$settings.formView.selectedTile.hasTile())
+            $scope.$settings.formView.selectedTile.drawToMap($scope.$settings.formView.selectedTileset, $scope.$settings.map.point);
     });
 
-
+    var documentMousePoint = {clientX: 0, clientY: 0};
     document.addEventListener('mousemove', (e) => {
-
-        // แสดง Tile ที่เลือกไว้ ตามตำแหน่งของเม้าส์
-        var width = Math.floor($scope.$settings.formView.ctxSelectedTile.canvas.width);
-        var height = Math.floor($scope.$settings.formView.ctxSelectedTile.canvas.height);
-        $($scope.$settings.formView.ctxSelectedTile.canvas).offset({top: e.clientY - height , left: e.clientX - width});
-
+        documentMousePoint.clientX = e.clientX;
+        documentMousePoint.clientY = e.clientY;
 
         if ($scope.$settings.map.isReady) {
             $scope.$apply(mousePosOnMap(e));
 
-            // Map moving
-            var scale = $scope.$settings.map.scale;
-            if ($scope.$settings.map.isDragging && scale > 1.08) {
-                document.body.style.cursor = 'move';
-                //console.log('Map Moving: set cursor to moving ...');
+            // เลือกตำแหน่งของ Tile ที่ถูกเลือกตามตำแหน่งของเม้าส์
+            $scope.$settings.formView.selectedTile.moveTo(e.clientX, e.clientY);
 
-                var point = $scope.$settings.map.point;
-                var ctx = $scope.$settings.map.ctx;
+            // มีการเลือก tile เพื่อวาดบนแผนที่ 
+            // ให้แสดง Layer ที่นอกเหนือจาก active อยู่เป็น blur
+            var otherLayerOpacity = 1;
+            if ($scope.$settings.formView.selectedTile.hasTile() && $scope.$settings.formView.selectedTile.visibleOnScreen){
+                otherLayerOpacity = 0.3;
 
-                ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-                ctx.translate(point.dx, point.dy);
-                ctx.scale(scale, scale);
-                ctx.translate(point.dx * -1, point.dy * -1);
-                ctx.drawImage($scope.$settings.map.primaryCtx.canvas, 0, 0);
-                ctx.resetTransform();
-
-                e.preventDefault();
+                if($scope.$settings.map.isDragging){
+                    $scope.$settings.formView.selectedTile.drawToMap($scope.$settings.formView.selectedTileset, $scope.$settings.map.point);
+                    e.preventDefault();
+                }
             }
+            blurOtherLayerExceptActive(otherLayerOpacity);
+
+
+            // Map moving
+            // var scale = $scope.$settings.map.scale;
+            // if ($scope.$settings.map.isDragging && scale > 1.08) {
+            //     document.body.style.cursor = 'move';
+            //     //console.log('Map Moving: set cursor to moving ...');
+
+            //     var point = $scope.$settings.map.point;
+            //     var ctx = $scope.$settings.map.ctx;
+
+            //     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            //     ctx.translate(point.dx, point.dy);
+            //     ctx.scale(scale, scale);
+            //     ctx.translate(point.dx * -1, point.dy * -1);
+            //     ctx.drawImage($scope.$settings.map.primaryCtx.canvas, 0, 0);
+            //     ctx.resetTransform();
+
+            //     e.preventDefault();
+            // }
         }
 
         // ย่อ/ขยาย ขนาดของ Panel ของคุณสมบัติแผนที่
-        if($scope.$settings.formView.visibleMapProperty && $scope.$settings.formView.resizingMapProperty){
+        if ($scope.$settings.formView.visibleMapProperty && $scope.$settings.formView.resizingMapProperty) {
             var mapPropertyPanelEl = $('#mapPropertyPanel');
             var newWidth = Math.max(350, e.clientX - 15); // 15 padding-left of container-fluid
-            mapPropertyPanelEl.css({'width': `${newWidth}px`, 'max-width': `${newWidth}px`});
+            mapPropertyPanelEl.css({
+                'width': `${newWidth}px`,
+                'max-width': `${newWidth}px`
+            });
             e.preventDefault();
         }
 
 
         // เลือกรูปภาพจาก Tileset
-        if($scope.$settings.formView.tilesetSelectStart){
+        if ($scope.$settings.formView.tilesetSelectStart) {
             const point = mousePosOnCanvas(e.target, e);
             const mapPos = seekMapPosByPoint(point);
 
-            if($scope.$settings.formView.selectedTile.addTile(mapPos))
+            if ($scope.$settings.formView.selectedTile.addTile(mapPos))
                 drawTileset();
 
             e.preventDefault();
@@ -269,12 +462,8 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         const keyList = ['Z', 'X'];
         if($scope.$settings.formView.selectedTile.hasTile() && keyList.indexOf(key) > -1){
             $scope.$settings.formView.selectedTile.flipTile(key);
-
-            const tileProps = $scope.$settings.formView.selectedTile.getTileInfo();
-            var ctxTarget = $scope.$settings.formView.ctxSelectedTile;
-            var flipCanvas = $tileMapService.rotateAndFlipImage(ctxTarget.canvas, tileProps.flipTypes);
-            $tileMapService.clearAllRect(ctxTarget);
-            ctxTarget.drawImage(flipCanvas, 0, 0);
+            $scope.$settings.formView.selectedTile.drawTile(tilesetCtx);
+            $scope.$settings.formView.selectedTile.moveTo(documentMousePoint.clientX, documentMousePoint.clientY);
             e.preventDefault();
         }
 
@@ -314,29 +503,39 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
                     }
 
                     tileMapJson = json || {};
-                    var tilesetCount = tileMapJson.tilesets.length;
-                    var syncCount = 1;
+                    var tilesetUndefined = [];
                     const tilesetLoader = () => {
                         return new Promise((resolve) => {
+                            var tilesetCount = tileMapJson.tilesets.length;
+                            var syncCount = 1;
+
                             function loader() {
                                 var tileset = tileMapJson.tilesets[syncCount - 1];
                                 applyUpdateStatusChange(`โหลด Tileset: ${tileset.name} ...`);
                                 $tilesetService.syncTileset(tileset.name).then((fileData) => {
-                                    $tileMapService.getImageBy(fileData).then((retImg) => {
-                                        // เพิ่ม Property ใหม่ให้กับ Tileset
-                                        tileset.imgObj = retImg;
-                                        tileset.ctx = $tileMapService.createContext2d(retImg.width, retImg.height);
-                                        tileset.ctx.drawImage(retImg, 0, 0);
-    
-                                        if(++syncCount <= tilesetCount) loader();
-                                        else resolve();
-                                    });
+                                    if(fileData === null)
+                                        tilesetUndefined.push(tileset.name);
+                                    else{
+                                        $tileMapService.getImageBy(fileData).then((retImg) => {
+                                            // เพิ่ม Property ใหม่ให้กับ Tileset
+                                            tileset.imgObj = retImg;
+                                            tileset.ctx = $tileMapService.createContext2d(retImg.width, retImg.height);
+                                            tileset.ctx.drawImage(retImg, 0, 0);
+        
+                                            if(++syncCount <= tilesetCount) loader();
+                                            else resolve();
+                                        });
+                                    }
                                 });
                             }
                             loader();
                         });
                     };
                     tilesetLoader().then(() => {
+                        const tilesetNotfoundStr = tilesetUndefined.join(',');
+                        if('' !== tilesetNotfoundStr)
+                            $dialogService.danger(null, 'ไม่พบไฟล์ภาพ tileset ต่อไปนี้ มีผลทำให้การวาดแผนที่บางส่วนจะขาดหายไป =>  ' + tilesetNotFoundStr);
+
                         applyUpdateStatusChange('กำลังวาดแผนที่ ...');
                         $scope.$settings.tileMapJson = tileMapJson;
                         $scope.$settings.map.ordTileMapJson = tileMapJson;
@@ -375,20 +574,6 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
     $scope.loadMap = function () {
         $scope.$settings.inputFile.type = 'tileMap';
         $scope.$settings.inputFile.element.click();
-    };
-    /**
-     * คำนวณตำแหน่งของเม้าส์ ที่อยู่บน Map
-     * @param {*} e         Event Object 
-     */
-    const mousePosOnMap = function(e){
-        if(!$scope.$settings.map.isReady) return;
-
-        // คำนวณตำแหน่งของเม้าส์ บน Map
-        const point = mousePosOnCanvas($scope.$settings.map.ctx.canvas, e);
-        const mapPos = seekMapPosByPoint(point);
-
-        $scope.$settings.map.point = point;
-        $scope.updateStatus(`[${point.dx+','+point.dy}], col: ${mapPos.columnIndex}, row: ${mapPos.rowIndex}`);
     };
     /**
      * อ่านข้อมูลแผนที่ใหม่
@@ -490,10 +675,15 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         $scope.$settings.formView.statusText = statusText || 'Ready!!';
     };
 
+
+
+
+    //=========================================================
+    // ตัวช่วยจัดการข้อมูลแผนที่
+    //=========================================================
     // ปรับปรุงแผนที่ เมื่อมีการแก้ไข หรือ มีการเปลี่ยนแปลงใดๆ
     $scope.updateMap = () => {
-        if(!$scope.$settings.map.isReady) return;
-        
+        if (!$scope.$settings.map.isReady) return;
         $scope.$settings.map.isReady = false;
         $tileMapService.clearAllRect($scope.$settings.map.ctx);
         $tileMapService.drawMap(true);
@@ -503,6 +693,23 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             $scope.$settings.map.isReady = true;
         }, 100);
     };
+    // Blur Layer อื่นๆ ยกเว้น layer ที่ active อยู่
+    var lastOpacity = 1;
+    const blurOtherLayerExceptActive = (opacity) => {
+        if(lastOpacity === opacity) return;
+        const workLayer = activeLayer();
+        for (var i = 0; i < $scope.$settings.map.mapLayers.length; i++) {
+            var layer = $scope.$settings.map.mapLayers[i];
+            layer.opacity = layer.id !== workLayer.id ? opacity : 1;
+        }
+        $scope.updateMap();
+        lastOpacity = opacity;
+    };
+    //=========================================================
+    //
+    //=========================================================
+
+
 
 
 
@@ -517,11 +724,11 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         $tileMapService.clearAllRect(tilesetCtx);
 
         const selectedTileset = $scope.$settings.formView.selectedTileset;
+        if(selectedTileset.ctx === undefined) return;
+
         tilesetCtx.canvas.width = selectedTileset.ctx.canvas.width;
         tilesetCtx.canvas.height = selectedTileset.ctx.canvas.height;
         tilesetCtx.drawImage(selectedTileset.ctx.canvas, 0, 0);
-
-        $tileMapService.drawGrid(tilesetCtx, Math.floor(tilesetCtx.canvas.width / selectedTileset.tilewidth), Math.floor(tilesetCtx.canvas.height / selectedTileset.tileheight));
 
         // วาดแสดงรายการ Tile ที่ถูกเลือก
         if($scope.$settings.formView.selectedTile.hasTile()){
@@ -541,14 +748,10 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             tilesetCtx.resetTransform();
 
             // เขียนข้อมูลภาพลงบน Canvas เพื่อให้ภาพเลื่อนตามเม้าส์
-            const arImageData = tilesetCtx.getImageData(tileProps.dx, tileProps.dy, tileProps.width, tileProps.height);
-            var ctxTarget = $scope.$settings.formView.ctxSelectedTile;
-            ctxTarget.canvas.width = tileProps.width;
-            ctxTarget.canvas.height = tileProps.height;
-            //ctxTarget.globalAlpha = 0.6;
-            ctxTarget.putImageData(arImageData, 0, 0);
-            ctxTarget.resetTransform();
+            $scope.$settings.formView.selectedTile.drawTile(tilesetCtx);
         }
+
+        //$tileMapService.drawGrid(tilesetCtx, Math.floor(tilesetCtx.canvas.width / selectedTileset.tilewidth), Math.floor(tilesetCtx.canvas.height / selectedTileset.tileheight));
     };
     $scope.selectedTileset = () => {
         $scope.$settings.formView.selectedTile.clear();
@@ -595,7 +798,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 }).run(($rootScope) => {
     $rootScope.$appSetting = {
         api: {
-            baseRoute: 'https://fw-map-editor.herokuapp.com/api/map-editor'
+            baseRoute: 'http://localhost:3000/api/map-editor'
         }
     };
 }).service('$fileReaderService', function ($q, $dialogService) {
@@ -630,7 +833,10 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
     this.syncTileset = (tilesetName) => {
         return $q((resolve) => {
             $customHttp.formGet(`${$rootScope.$appSetting.api.baseRoute}/getFileData/tileset/${tilesetName}`, {}, null).then((res) => {
-                resolve(res.data.fileData || null);
+                if(res.status !== 200)
+                    resolve(null);
+                else
+                    resolve(res.data.fileData || null);
             }, () => {
                 resolve(null);
             });
@@ -688,6 +894,12 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
     const flipProps = (flipType, angle) => {
         return { flipType: flipType || null, angle: angle || null };
     };
+    const seekTileset = (imageIndex) => {
+        var tileset = _this.tileMapJson.tilesets.filter(function (tileset) {
+            return imageIndex >= tileset.firstgid && imageIndex <= ((tileset.tilecount + tileset.firstgid) - 1);
+        });
+        return tileset[0] || null;
+    };
     const defaultOpts = {
         tile: {
             defaultWidth: 32,
@@ -695,21 +907,32 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         }
     };
 
-    const MapLayerCls = function (layerName, layerType, layerIndex, visible, isNew) {
-
+    const MapLayerCls = function () {
         const updateTiles = () => {
             for (var i = 0; i < this.tiles.length; i++) {
-                this.tiles[i].layerId = this.id;
-                this.tiles[i].layerName = this.name;
-                this.tiles[i].layerIndex = this.index;
-                this.tiles[i].isNewLayer = this.isNew;
+                this.tiles[i].layer = this;
             }
-        };        
+        };
 
-        this.initLayer = (layerId, layerName, layerType, layerIndex, visible, isNew) => {
+        this.id = null;
+        this.name = null;
+        this.type = null;
+        this.opacity = 0;
+        this.index = null;
+        this.visible = false;
+        this.isNew = false;
+        this.isActive = false;
+        // สร้างจำนวน Tile Array เท่ากับ กว้าง x ยาว ของแผนที่
+        this.tiles = [];
+        const count = tileMapJson.width * tileMapJson.height;
+        for(var i=0;i<count;i++)
+            this.tiles.push(new MapTileCls());
+
+        this.initLayer = (layerId, layerName, layerType, opacity, layerIndex, visible, isNew) => {
             this.id = layerId || null;
             this.name = layerName || null;
             this.type = layerType || null;
+            this.opacity = opacity || 1;
             this.index = layerIndex || null;
             this.visible = visible === undefined ? false : visible;
             this.isNew = isNew === undefined ? false : isNew; // true = เป็นการสร้าง Layer ใหม่ระหว่างการแก้ไข แผนที่
@@ -719,19 +942,55 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             return this;
         };
 
+        /**
+         * คำนวณตำแหน่งของ Tile data index จาก columnindex & rowindex
+         * @param {*} colIndex       ค่าเริ่มจาก 0
+         * @param {*} rowIndex       ค่าเริ่มจาก 0
+         */
+        this.getTileIndexBy = (colIndex, rowIndex) => {
+            const mapWidth = _this.tileMapJson.width; // จำนวนคอลัมล์ในแผนที่ในแต่ละแถว
+            return rowIndex * mapWidth + colIndex;
+        };
 
-        // สร้างจำนวน Tile Array เท่ากับ กว้าง x ยาว ของแผนที่
-        this.tiles = [];
-        const count = tileMapJson.width * tileMapJson.height;
-        for(var i=0;i<count;i++)
-            this.tiles.push(new MapTileCls());
+        /**
+         * ปรับปรุงข้อมูล tile ใน  Layer
+         * @param {*} colIndex              ค่าเริ่มจาก 0      ตำแหน่งคอลัมล์ในแผนที่
+         * @param {*} rowIndex              ค่าเริ่มจาก 0      ตำแหน่งแถวในแผนที่
+         * @param {*} layerImageIndex       ตำแหน่งของภาพใน  tileset ที่คำนวณค่าการ flip & rotate มาแล้ว
+         * @param {*} arImageData           Uint8ClampArray ที่ได้จาก getImageData
+         */
+        this.updateTileBy = (colIndex, rowIndex, layerImageIndex, arImageData) => {
+            var tileIndex = this.getTileIndexBy(colIndex, rowIndex);
+            var tileItem = this.tiles[tileIndex];
+            tileItem.flipTypeProps = _this.getTileFlipType(layerImageIndex);
 
-        this.initLayer(layerName, layerType, layerIndex, visible, isNew);
+            var tileCachedItem = null;
+            if(null === (tileCachedItem = _this.tileImagesCached[layerImageIndex] || null)){
+                tileCachedItem = new TileImageCached(null, arImageData, tileItem.flipTypeProps);
+                tileCachedItem.canvas = _this.convertImageDataToImageObject(tileCachedItem.arImageData, _this.tileMapJson.tilewidth, _this.tileMapJson.tileheight, tileItem.flipTypeProps);
+                _this.tileImagesCached[layerImageIndex] = tileCachedItem;
+            }
+
+            
+            tileItem.layerImageIndex = layerImageIndex;
+            tileItem.imageIndex = _this.getTileLocalId(layerImageIndex);
+            tileItem.tileset = seekTileset(tileItem.imageIndex);
+            tileItem.imageData = arImageData;
+            
+            tileItem.point = _this.getPointBy(tileIndex + 1, _this.tileMapJson.width, _this.tileMapJson.tilewidth);
+            tileItem.visible = true;
+            tileItem.canvas = tileCachedItem.canvas;
+
+            // Update การเปลี่ยนแปลง Map เฉพาะ tile
+            // ก่อนการเขียนค่า Tile เข้าไปใหม่ Clear Rect หากไม่ Clear จะทำให้เขียนภาพทับลงไป สีจะเข้มขึ้น
+            _this.ctx.clearRect(tileItem.point.dx, tileItem.point.dy, _this.tileMapJson.tilewidth, _this.tileMapJson.tileheight);
+            tileItem.drawTile();
+        };
+
+        //this.initLayer(layerName, layerType, layerIndex, visible, isNew);
     };
     const MapTileCls = function () {
-        this.layerName = null;
-        this.layerIndex = null;
-        this.isNewLayer = null;
+        this.layer = null; // Tile นี่อยู่ใน Layer ใด
         this.layerImageIndex = null; // ตำแหน่งรูปภาพที่ได้จาก map json
 
         this.tileset = null;
@@ -753,9 +1012,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         }
 
         this.initTile = (layer, layerImageIndex, imageIndex, tileset, flipTypeProps, arImageData, point, visible) => {
-            this.layerName = layer.name;
-            this.layerIndex = layer.index;
-            this.isNewLayer = layer.isNew;
+            this.layer = layer;
             this.layerImageIndex = layerImageIndex;
 
             this.tileset = tileset;
@@ -768,6 +1025,11 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
             return this;
         };
+    };
+    const TileImageCached = function(canvas, tileImageData, flipTypeProps){
+        this.canvas = canvas || null;
+        this.arImageData = tileImageData || null;
+        this.flipTypeProps = flipTypeProps || null;
     };
     
 
@@ -949,7 +1211,8 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
      * @returns InMemory - Canvas
      */
     this.rotateAndFlipImage = (inMemCanvas, flipTypes) => {
-        var ctx = _this.createContext2d(inMemCanvas.width, inMemCanvas.height);
+        var isHorizontalRotate = flipTypes.filter((item) => { return item.angle === 90 || item.angle === 270; }).length > 0;
+        var ctx = _this.createContext2d(isHorizontalRotate ? inMemCanvas.height : inMemCanvas.width, isHorizontalRotate ? inMemCanvas.width : inMemCanvas.height);
         const calAngle = (angle) => {
             return angle * (Math.PI / 180);
         };
@@ -991,6 +1254,10 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
                 ctx.rotate(calAngle(angle));
                 ctx.scale(1, -1);
             }
+        }else{
+            ctx.translate(0,0);
+            ctx.rotate(0);
+            ctx.scale(1,1);
         }
 
         ctx.drawImage(inMemCanvas, 0, 0);
@@ -1105,15 +1372,17 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
      * @param {*} enableGrid    true|undefined วาด Grid
      */
     this.drawMap = (enableGrid) => {
-        _this.ctx.save(); // Save canvas default option 
-        _this.ctx.globalCompositeOperation = 'source-over'; // ให้เขียนภาพไว้บน ตัวที่มีอยู่ใน Canvas (SendToTop)
         for (var i = 0; i < _this.mapLayers.length; i++){
             var layer = _this.mapLayers[i];
             if(!layer.visible) continue;
+
+            _this.ctx.save(); // Save canvas default option 
+            _this.ctx.globalCompositeOperation = 'source-over'; // ให้เขียนภาพไว้บน ตัวที่มีอยู่ใน Canvas (SendToTop)
+            _this.ctx.globalAlpha = layer.opacity;
             for(var x = 0; x < layer.tiles.length; x++)
                 layer.tiles[x].drawTile();
+            _this.ctx.restore(); // restore canvas option to default
         }
-        _this.ctx.restore(); // restore canvas option to default
 
         // วาด grid ลงบนแผนที่
         if(!enableGrid || enableGrid === true)
@@ -1130,7 +1399,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
                 var layer = _this.tileMapJson.layers[i];
                 if (!layer.data) continue;
 
-                var layerItem = new MapLayerCls(layer.id, layer.name, layer.type, i, layer.visible, false);
+                var layerItem = new MapLayerCls().initLayer(layer.id, layer.name, layer.type, layer.opacity, i, layer.visible, false);
 
                 for (var x = 0; x < layer.data.length; x++) {
                     var columnIndex = x;
@@ -1148,30 +1417,26 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
                     // ค้นหา Tileset ตามตำแหน่งรูปภาพที่เขียนใน data property ของแต่ละ Layer
                     // เพื่อหา Tileset สำหรับ cut ข้อมูลรูปภาพเขียนลงบน Canvas ตามขนาด 32 x 32 pixel
-                    var tilesets = _this.tileMapJson.tilesets.filter(function (tileset) {
-                        return tileImageIndex >= tileset.firstgid && tileImageIndex <= ((tileset.tilecount + tileset.firstgid) - 1);
-                    });
-                    if (tilesets.length === 0) {
+                    var tileset = seekTileset(tileImageIndex);//_this.tileMapJson.tilesets.filter(function (tileset) {
+                    //    return tileImageIndex >= tileset.firstgid && tileImageIndex <= ((tileset.tilecount + tileset.firstgid) - 1);
+                    //});
+                    if (null === tileset) {
                         console.log(`No Tileset: Layer: ${layer.name}, tileImageIndex: ${tileImageIndex}`);
                         continue;
                     }
-                    tileItem.tileset = tilesets[0];
+                    tileItem.tileset = tileset;
 
 
                     // ตำแหน่งรูปภาพจะถูก Running ตัวเลขไปตามจำนวน Tileset 
                     // และใน Tileset จะบอกตำแหน่งเริ่มต้นของรูปภาพ ซึ่งจะต่อจาก Tileset ก่อนหน้า
                     // ดังนั้น หากต้องการตำแหน่งของภาพใน Tileset ที่แท้จริง ต้องลบ ("firstgid" - 1) ออกก่อน
-                    tileImageIndex = tileImageIndex - (tilesets[0].firstgid - 1);
-                    var point = _this.getPointBy(tileImageIndex, tilesets[0].columns, tilesets[0].tilewidth);
+                    tileImageIndex = tileImageIndex - (tileset.firstgid - 1);
+                    var point = _this.getPointBy(tileImageIndex, tileset.columns, tileset.tilewidth);
                     // หาพิกัดของรูปภาพบน Tileset ตาม tileImageIndex
-                    var tileImageData = tilesets[0].ctx.getImageData(point.dx, point.dy, tilesets[0].tilewidth, tilesets[0].tileheight);
+                    var tileImageData = tileset.ctx.getImageData(point.dx, point.dy, tileset.tilewidth, tileset.tileheight);
 
                     if(!_this.tileImagesCached[layerImageIndex])
-                        _this.tileImagesCached[layerImageIndex] = { 
-                            canvas: null,
-                            arImageData: tileImageData,
-                            flipTypeProps: flipTypeProps
-                        };
+                        _this.tileImagesCached[layerImageIndex] = new TileImageCached(null, tileImageData, flipTypeProps);
                     
                     tileItem.imageIndex = tileImageIndex;
                     tileItem.imageData = tileImageData;

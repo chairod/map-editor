@@ -81,7 +81,7 @@ body::-webkit-scrollbar {
 }
 
 .editor-container{
-    background-color: #fff;
+    background-color: #D8D8D8;
     /* background-color: #898989; */
     width:auto;
     max-width:calc(100% - 109px);
