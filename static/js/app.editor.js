@@ -128,7 +128,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             }
                
             const mapPos = seekMapPosByPoint(newPoint); // ตำแหน่ง column, row เริ่มต้นในการเขียน tile ลงบนแผนที่
-            const mapWidth = $scope.$settings.tileMapJson.width; // จำนวนคอลัมล์ของแผนที่
+            const tilesetColumnWidth = tileset.imagewidth / tileset.tilewidth; // จำนวนคอลัมล์ของแผนที่
             const flipTypes = renderFlipTypes();
             const tileWidth = $scope.$settings.tileMapJson.tilewidth;
             const tileHeight = $scope.$settings.tileMapJson.tileheight;
@@ -138,11 +138,13 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
                 var tileItems = tileGroups[keys[index]];
                 for(var i=0;i<tileItems.length;i++){
                     var tile = tileItems[i];
-                    var tileId = (tile.rowIndex * mapWidth + tile.columnIndex) + tileset.firstgid;
+                    var tileId = (tile.rowIndex * tilesetColumnWidth + tile.columnIndex) + tileset.firstgid;
                     var imageIndex = $tileMapService.flipTypesToImageIndex(flipTypes, tileId);
                     var arImageData = tileset.ctx.getImageData(tile.columnIndex * tileWidth, tile.rowIndex * tileHeight, tileWidth, tileHeight);
-    
-                    workLayer.updateTileBy(mapPos.columnIndex + i, mapPos.rowIndex + index, imageIndex, arImageData);
+                    
+                    // เขียนเฉพาะ tile ที่มีข้อมูลรูปภาพ
+                    if(arImageData.data.filter((val) => { return val > 0; }).length > 0)
+                        workLayer.updateTileBy(mapPos.columnIndex + i, mapPos.rowIndex + index, imageIndex, arImageData);
                 }
             }while(++index < keys.length);
 
@@ -196,14 +198,16 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         };
 
         /**
-         * 
-         * @param {*} tilePos ตำแหน่ง column,row ของ tile ได้จากการเรียกใช้ฟังชันก์  seekMapPosByPoint
+         * เพิ่มรายการ tile ที่เลือก
+         * @param {*} tileset       เลือก tile มาจาก tileset ใด
+         * @param {*} tilePos       ตำแหน่ง column,row ของ tile ได้จากการเรียกใช้ฟังชันก์  seekMapPosByPoint
          */
-        this.addTile = (tilePos) => {
-            if (this.tiles.map((item) => toJson(item)).indexOf(toJson(tilePos)) !== -1)
+        this.addTile = (tileset, tilePos) => {
+            const colCount = tileset.imagewidth / tileset.tilewidth - 1; // จำนวนคอลัมล์ทั้งหมดของ tileset
+            const rowCount = tileset.imageheight / tileset.tileheight - 1; // จำนวนแถวทั้งหมดของ tileset
+            if (tilePos.columnIndex > colCount || tilePos.rowIndex > rowCount || this.tiles.map((item) => toJson(item)).indexOf(toJson(tilePos)) !== -1)
                 return false;
             this.tiles.push(tilePos);
-            //console.log(`${JSON.stringify(this.tiles)}`);
 
             // เก็บข้อมูล tile ที่เลือกให้ครบทุกตำแหน่ง
             const tileInfo = this.getTileInfo();
@@ -217,6 +221,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
                 posY += $scope.$settings.tileMapJson.tileheight;
             }while(posY < (tileInfo.dy + tileInfo.height));
             this.tiles = tiles;
+            console.log(`${JSON.stringify(tiles)}`);
             return true;
         };
 
@@ -275,7 +280,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
             // เขียนเส้นขอบ
             this.ctx.save();
-            this.ctx.lineWidth = 5;
+            this.ctx.lineWidth = 3;
             this.ctx.strokeStyle = '#000';
             this.ctx.strokeRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
             this.ctx.restore();
@@ -500,7 +505,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         $timeout.cancel(mapMouseLeaveId);
         mapMouseLeaveId = $timeout(() => {
             $scope.$settings.formView.selectedTile.visibleOnScreen = false;
-        }, 50);
+        }, 250);
     });
     mapCanvas.addEventListener('mousemove', (e) => {
         $timeout.cancel(mapMouseLeaveId);
@@ -585,7 +590,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             const point = mousePosOnCanvas(e.target, e);
             const mapPos = seekMapPosByPoint(point);
 
-            if ($scope.$settings.formView.selectedTile.addTile(mapPos))
+            if ($scope.$settings.formView.selectedTile.addTile($scope.$settings.formView.selectedTileset, mapPos))
                 drawTileset();
 
             e.preventDefault();
@@ -849,16 +854,16 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         }, 100);
     };
     // Blur Layer อื่นๆ ยกเว้น layer ที่ active อยู่
-    var lastOpacity = 1;
+    var lastBlurLayerOpacity = 1;
     const blurOtherLayerExceptActive = (opacity) => {
-        if(lastOpacity === opacity) return;
+        if(lastBlurLayerOpacity === opacity) return;
         const workLayer = activeLayer();
         for (var i = 0; i < $scope.$settings.map.mapLayers.length; i++) {
             var layer = $scope.$settings.map.mapLayers[i];
             layer.opacity = layer.id !== workLayer.id ? opacity : 1;
         }
         $scope.updateMap();
-        lastOpacity = opacity;
+        lastBlurLayerOpacity = opacity;
     };
     $scope.activeEraser = () => {
         $scope.$settings.formView.eraserTile.visible = !$scope.$settings.formView.eraserTile.visible;
@@ -924,7 +929,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
         const point = mousePosOnCanvas(tilesetCtx.canvas, e);
         const mapPos = seekMapPosByPoint(point);
-        $scope.$settings.formView.selectedTile.clear().addTile(mapPos);
+        $scope.$settings.formView.selectedTile.clear().addTile($scope.$settings.formView.selectedTileset, mapPos);
         drawTileset();
     });
 
@@ -939,6 +944,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             $scope.$settings.map.mapLayers[i].isActive = layer.id === $scope.$settings.map.mapLayers[i].id;
         
         $scope.$settings.formView.activeLayer = activeLayer();
+        lastBlurLayerOpacity = null;
     };
     $scope.toggleVisibleLayer = (layer) => {
         if(!$scope.$settings.map.isReady) return;
@@ -960,8 +966,8 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 }).run(($rootScope) => {
     $rootScope.$appSetting = {
         api: {
-            //baseRoute: 'http://localhost:3000/api/map-editor'
-            baseRoute: 'https://fw-map-editor.herokuapp.com/api/map-editor'
+            baseRoute: 'http://localhost:3000/api/map-editor'
+            //baseRoute: 'https://fw-map-editor.herokuapp.com/api/map-editor'
         }
     };
 }).service('$fileReaderService', function ($q, $dialogService) {
