@@ -26,7 +26,7 @@
 <body>
     <div ng-app="AppEditor" ng-controller="EditorController" class="container-fluid w-100 vh-100 mt-0">
         <!-- Popup แสดง ข้อมูลแผนที่ -->
-        <fw-cloud width="270"  ng-mouseleave="$settings.formView.selectedTile.visibleOnScreen=true" ng-mouseenter="$settings.formView.selectedTile.visibleOnScreen=false">
+        <fw-cloud width="270">
             <div class="d-flex flex-row f-12 mb-1">
                 <div>ทำงานกับ Layer</div>
                 <div class="ml-2 flex-fill text-danger">
@@ -44,9 +44,10 @@
             <div class="text-danger f-12">*** นำเม้าส์ลาก Panel นี้หากต้องการย้ายไปยังตำแหน่งอื่น ***</div>
         </fw-cloud>
 
-        <!-- Canvas แสดง Tile ที่ถูกเลือก -->
-        <canvas id="selectTile" class="animated fadeIn position-absolute" style="z-index:5;" ng-show="$settings.formView.selectedTile.hasTile() && $settings.formView.selectedTile.visibleOnScreen"></canvas>
-
+        <!-- Canvas แสดง Tile ที่ถูกเลือก (ถูกซ่อนเมื่อเลือกยางลบ) -->
+        <canvas id="selectTile" class="animated fadeIn position-absolute" style="z-index:5;" ng-show="$settings.formView.selectedTile.hasTile() && $settings.formView.selectedTile.visibleOnScreen && !$settings.formView.eraserTile.visible"></canvas>
+        <!-- Canvas แสดงยางลบ -->
+        <canvas id="eraserTile" class="animated fadeIn position-absolute" style="z-index:5;" ng-show="$settings.formView.eraserTile.visible"></canvas>
 
         <div class="border">
             <div class="p-2 top-menu-bar bg-light position-fixed text-dark border-bottom shadow-sm">
@@ -64,6 +65,11 @@
                     <div>
                         <fw-icon class="f-20 f-w-900 border-right" icon="ti-panel" ng-click="$settings.formView.visibleMapProperty=!$settings.formView.visibleMapProperty" tooltip-deprecate="แสดงคุณสมบัติของแผนที่ เช่น Layer, Tilesets เป็นต้น" ng-class="{'text-success': $settings.map.isReady, 'text-muted': !$settings.map.isReady}">
                             <div class="d-md-block f-8 d-none">คุณสมบัติแผนที่</div>
+                        </fw-icon>
+                    </div>
+                    <div>
+                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-eraser" ng-click="activeEraser()" tooltip-deprecate="เปิด/ปิดการใช้งาน Eraser tile" ng-class="{'text-success': $settings.map.isReady && !$settings.formView.eraserTile.visible, 'text-danger': $settings.map.isReady && $settings.formView.eraserTile.visible, 'text-muted': !$settings.map.isReady}">
+                            <div class="d-md-block f-8 d-none">ลบ Tile</div>
                         </fw-icon>
                     </div>
                     <div class="flex-fill mr-auto">&nbsp;</div>
@@ -91,7 +97,7 @@
                 </div>
 
                 <!-- Map Property (Tilesets & Layers) -->
-                <div id="mapPropertyPanel" ng-mouseleave="$settings.formView.visibleMapProperty=$settings.autoHideMapProperty!=='Y' || $settings.formView.resizingMapProperty;$settings.formView.selectedTile.visibleOnScreen=true" ng-mouseenter="$settings.formView.selectedTile.visibleOnScreen=false" class="position-absolute shadow-sm w-100 p-2 pt-3 bg-light animated slideInLeft overflow-auto no-scrollbar d-none" ng-class="{'d-none': !$settings.formView.visibleMapProperty}" style="width:auto;max-width:350px;top:0px;left:0px;height:calc(100vh - 45px);">
+                <div id="mapPropertyPanel" ng-mouseleave="$settings.formView.visibleMapProperty=$settings.autoHideMapProperty!=='Y' || $settings.formView.resizingMapProperty" class="position-absolute shadow-sm w-100 p-2 pt-3 bg-light animated slideInLeft overflow-auto no-scrollbar d-none" ng-class="{'d-none': !$settings.formView.visibleMapProperty}" style="width:auto;max-width:350px;top:0px;left:0px;height:calc(100vh - 45px);">
                     <!-- Resize panel -->
                     <div id="resizeMapPropertyPanel" ng-mousedown="$settings.formView.resizingMapProperty=true" class="bg-dark cursor-col-resize position-absolute d-none d-md-inline-block" style="right:0;top:0;width:4px;max-width:4px;min-width:4px;height:calc(100% + 155px)">&nbsp;</div>
                     <div class="d-flex flex-row">

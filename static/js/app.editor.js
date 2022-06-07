@@ -67,7 +67,8 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
          * @param {*} tileset       tileset ที่ active อยู่ในปัจจุบัน
          * @param {*} mapPoint      ตำแหน่ง x,y ของเม้าส์ที่อยู่บนแผนที่ ณ ปัจจุบัน (mousePosOnCanvas)
          */
-        this.drawToMap = (tileset, mapPoint) => {
+        var drawToMapTimeId = null;
+        this.drawToMap = (tileset, mapPoint, callback) => {
             const tileInfo = this.getTileInfo();
             var newPoint = $.extend(true, {}, mapPoint);
             // 10 คือค่า Sensitive ลดทอนตำแหน่งของเม้าส์
@@ -144,6 +145,12 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
                     workLayer.updateTileBy(mapPos.columnIndex + i, mapPos.rowIndex + index, imageIndex, arImageData);
                 }
             }while(++index < keys.length);
+
+
+            clearTimeout(drawToMapTimeId);
+            drawToMapTimeId = setTimeout(() => {
+                if(callback) callback();
+            }, 1000);
         };
 
         /**
@@ -198,6 +205,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             this.tiles.push(tilePos);
             //console.log(`${JSON.stringify(this.tiles)}`);
 
+            // เก็บข้อมูล tile ที่เลือกให้ครบทุกตำแหน่ง
             const tileInfo = this.getTileInfo();
             var tiles = [], posY = tileInfo.dy;
             do{
@@ -250,6 +258,106 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         };
     };
 
+    /**
+     * จัดการลบข้อมูล Tile ในแต่ละ Layer
+     */
+    const TileEraserCls = function(ctx){
+        const drawEraser = () => {
+            $tileMapService.clearAllRect(this.ctx);
+            this.ctx.canvas.width = this.ctx.canvas.height = this.size;
+
+            // ใส่พื้นสีแดงให้กับ Canvas
+            this.ctx.save();
+            this.ctx.globalAlpha = 0.6;
+            this.ctx.fillStyle = '#ff0000';
+            this.ctx.fillRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+            this.ctx.restore();
+
+            // เขียนเส้นขอบ
+            this.ctx.save();
+            this.ctx.lineWidth = 5;
+            this.ctx.strokeStyle = '#000';
+            this.ctx.strokeRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+            this.ctx.restore();
+
+            // วาดภาพยางลบลงบน Canvas
+            this.ctx.drawImage(img, Math.floor(this.ctx.canvas.width / 2) - 16, Math.floor(this.ctx.canvas.height / 2) - 16);
+        };
+
+        this.size = 32; // ขนาดของ Eraser 
+        this.visible = false; // true = แสดง Eraser บนหน้าเว็บ
+        this.enable = false; // true = เปิดใช้งาน Eraser
+        this.ctx = ctx;
+
+        // โหลดรูปภาพยางลบ เพื่อวาดลง canvas
+        var img = new Image();
+        img.onload = () => {
+            drawEraser();
+        };
+        img.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAzgAAAM4BlP6ToAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAAG+SURBVFiFxdc/axRBGIDxX0454Q6uFSsbQSF+BQUliiL4Daz8CsYioES/gI2lnWAXohaihf9ARJugBhtFOxNFsFByYBHPYue4ybI5d27nzheW29l533meuWV2dvnPMZdxnHNYQBtruIN+pvHHRhcPMCgdn3BkFvCnEXQNj7Ad2pvTlCjDl41u6WlsTVOig8cR/GpFzjH8Cv3fMD9L+NQkUuBVEl+bSHQUs0iBZ5Moz/w3jieOMbFEF88i+M/wu4UTiRInjVbHFxxIhV9RLKmNhhL9UH8rFT6MphLXjVZGMjyHxMVQV7lX1IE3kehhPdS8aAKPJTZrSvTwMuT+wdmm8BSJGD7ApbizgydRZ8pDpo5EF8+j8Zfiwn127mopM68jUZ75YrloORO8SqKP9+Pg8Dl03s4AH8ZRfI/Au8IpnusDXMgo0MObCH5zXPKHkLSSER7f8xv/KrickpwI3/Vvj2MP7mWQmAg+jDbuNpAYu86nLZEFPqlEY/gczis2hVa41sIpHAztd3hVUbtX8Tm2P7Rf421N7jbu4yGjV6xZHxvDWVzDmQrLFg6F84+hKI42DuOH4v0uNVYnqMkffwFuKvRYcmx/RQAAAABJRU5ErkJggg==';
+
+        /**
+         * จำนวนที่ต้องการเพิ่ม หรือ ลด ขนาดของยางลบ
+         * คำนวณจาก ขนาด 32 pixel และคูณกับ increase ที่ผ่านเข้ามา
+         * @param {*} increase  ตัวเลขที่ต้องการเพิ่มหรือลด ให้ส่งค่ามาเป็น 1,2,3,...5 สูงสุดไม่เกิน 5
+         */
+        this.newSize = (increase) => {
+            const maxEraserSize = 160; // 5 เท่า (32 * 5)
+            const minEraserSize = 32;
+
+            this.size = Math.min(Math.abs(increase) * 32, maxEraserSize);
+            this.size = Math.max(minEraserSize, this.size);
+            drawEraser();
+        };
+
+
+        /**
+         * ย้ายตำแหน่งของยางลบ ไปตามการเลื่อนของเม้าส์
+         * 
+         * @param {*} mouseEvent
+         */
+        this.moveTo = (mouseEvent) => {
+            const dx = mouseEvent.clientX - this.size;
+            const dy = mouseEvent.clientY - this.size;
+            // const halfVal = Math.floor(this.size / 2);
+            // point.dx += halfVal;
+            // point.dy += halfVal;
+            
+            $(this.ctx.canvas).offset({top: dy, left: dx});
+        };
+
+        /**
+         * ลบข้อมูลใน Data attribute ของ Layer ที่กำลังทำงานอยู่
+         * @param {*} mapPoint      ตำแหน่ง x,y ของเม้าส์ที่อยู่บน Map mousePosOncanvas()
+         * @param {*} activeLayer   Layer ที่ต้องการลบข้อมูลออก เรียกจาก activeLayer()
+         */
+        var doEraserCallbackId = null;
+        this.doEraser = (mapPoint, activeLayer, callback) => {
+            if(!this.enable) return;
+            const sensitiveVal = this.size - 16;
+            var newPoint = $.extend(true, {}, mapPoint);
+            newPoint.dx -= sensitiveVal;
+            newPoint.dy -= sensitiveVal;
+            const mapPos = seekMapPosByPoint(newPoint);
+
+            var vertical = 32;
+            do {
+                var horizontal = 32;
+                do {
+                    activeLayer.updateTileBy(mapPos.columnIndex + (horizontal / 32 - 1), mapPos.rowIndex, 0, null);
+                    horizontal += 32;
+                } while (horizontal <= this.size);
+                mapPos.rowIndex += 1;
+                vertical += 32;
+            } while (vertical <= this.size);
+
+            clearTimeout(doEraserCallbackId);
+            doEraserCallbackId = setTimeout(() => {
+                if(callback) callback();
+            }, 1000);
+        };
+    };
+
 
     
 
@@ -283,6 +391,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
             visibleMapProperty: false, // แสดง Map Properties Panel
             resizingMapProperty: false, // กำลังลากเม้าส์ เพื่อขยายขนาดของ Map Properties Panel
+            eraserTile: new TileEraserCls(document.getElementById('eraserTile').getContext('2d')), // ยางลบ ลบข้อมูล Tile ของแต่ละ Layer ในแผนที่
 
             selectedTileset: null, // ชื่อ Tileset ที่เลือกอยู่ ณ ปัจจุบัน
             tilesetSelectStart: false, // สถานะการนำเม้าส์ ไปลากบน Tileset เพื่อระบุตำแหน่งของ Tileset ที่กำลังเลือกเพื่อวาดลงบนแผนที่
@@ -365,18 +474,44 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
     //     e.preventDefault();
     // });
-    $scope.$settings.map.ctx.canvas.addEventListener('mousedown', (e) => {
+    const mapCanvas = $scope.$settings.map.ctx.canvas;
+    mapCanvas.addEventListener('mousedown', (e) => {
         $scope.$apply(mousePosOnMap(e));
         $scope.$settings.map.isDragging = true;
 
+        if($scope.$settings.map.isReady){
+            if($scope.$settings.formView.eraserTile.visible){
+                $scope.$settings.formView.eraserTile.enable = true;
+                const mapPoint = $scope.$settings.map.point;
+                const activeLayer = $scope.$settings.formView.activeLayer;
+                $scope.$settings.formView.eraserTile.doEraser(mapPoint, activeLayer, () => {
+                    $scope.updateMap();
+                });
+                $scope.updateMap();
+            }else if($scope.$settings.formView.selectedTile.hasTile()){
+                $scope.$settings.formView.selectedTile.drawToMap($scope.$settings.formView.selectedTileset, $scope.$settings.map.point, () => {
+                    $scope.updateMap();
+                });                
+            }
+        }
+    });
+    var mapMouseLeaveId = null;
+    mapCanvas.addEventListener('mouseleave', (e) => {
+        $timeout.cancel(mapMouseLeaveId);
+        mapMouseLeaveId = $timeout(() => {
+            $scope.$settings.formView.selectedTile.visibleOnScreen = false;
+        }, 50);
+    });
+    mapCanvas.addEventListener('mousemove', (e) => {
+        $timeout.cancel(mapMouseLeaveId);
+        
         if($scope.$settings.formView.selectedTile.hasTile())
-            $scope.$settings.formView.selectedTile.drawToMap($scope.$settings.formView.selectedTileset, $scope.$settings.map.point);
+            $scope.$settings.formView.selectedTile.visibleOnScreen = true;
     });
 
-    var documentMousePoint = {clientX: 0, clientY: 0};
+    var documentMouseMoveEvent = null;
     document.addEventListener('mousemove', (e) => {
-        documentMousePoint.clientX = e.clientX;
-        documentMousePoint.clientY = e.clientY;
+        documentMouseMoveEvent = e;
 
         if ($scope.$settings.map.isReady) {
             $scope.$apply(mousePosOnMap(e));
@@ -384,14 +519,29 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             // เลือกตำแหน่งของ Tile ที่ถูกเลือกตามตำแหน่งของเม้าส์
             $scope.$settings.formView.selectedTile.moveTo(e.clientX, e.clientY);
 
+            // เลื่อนตำแหน่งของ eraser tile ไปตามตำแหน่งของเม้าส์ที่เปลี่ยนแปลง
+            $scope.$settings.formView.eraserTile.moveTo(e);
+
             // มีการเลือก tile เพื่อวาดบนแผนที่ 
             // ให้แสดง Layer ที่นอกเหนือจาก active อยู่เป็น blur
             var otherLayerOpacity = 1;
-            if ($scope.$settings.formView.selectedTile.hasTile() && $scope.$settings.formView.selectedTile.visibleOnScreen){
-                otherLayerOpacity = 0.3;
+            if($scope.$settings.formView.eraserTile.visible){
+                otherLayerOpacity = 0;
+                if($scope.$settings.formView.eraserTile.enable){
+                    const mapPoint = $scope.$settings.map.point;
+                    const activeLayer = $scope.$settings.formView.activeLayer;
+                    $scope.$settings.formView.eraserTile.doEraser(mapPoint, activeLayer, () => {
+                        $scope.updateMap();
+                    });
+                    e.preventDefault();
+                }
+            }else if ($scope.$settings.formView.selectedTile.hasTile() && $scope.$settings.formView.selectedTile.visibleOnScreen){
+                otherLayerOpacity = 0.1;
 
                 if($scope.$settings.map.isDragging){
-                    $scope.$settings.formView.selectedTile.drawToMap($scope.$settings.formView.selectedTileset, $scope.$settings.map.point);
+                    $scope.$settings.formView.selectedTile.drawToMap($scope.$settings.formView.selectedTileset, $scope.$settings.map.point, () => {
+                        $scope.updateMap();
+                    });
                     e.preventDefault();
                 }
             }
@@ -447,6 +597,8 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
         $scope.$settings.formView.resizingMapProperty = false;
         $scope.$settings.formView.tilesetSelectStart = false;
+
+        $scope.$settings.formView.eraserTile.enable = false;
     });
     document.addEventListener('keydown', (e) => {
         var key = (e.key || '').toUpperCase();
@@ -455,7 +607,10 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
             $scope.$settings.formView.selectedTile.clear();
             drawTileset();
-            
+
+            $scope.$settings.formView.eraserTile.visible = false;
+            $scope.$settings.formView.eraserTile.enable = false;
+
             e.preventDefault();
         }
         
@@ -463,7 +618,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         if($scope.$settings.formView.selectedTile.hasTile() && keyList.indexOf(key) > -1){
             $scope.$settings.formView.selectedTile.flipTile(key);
             $scope.$settings.formView.selectedTile.drawTile(tilesetCtx);
-            $scope.$settings.formView.selectedTile.moveTo(documentMousePoint.clientX, documentMousePoint.clientY);
+            $scope.$settings.formView.selectedTile.moveTo(documentMouseMoveEvent.clientX, documentMouseMoveEvent.clientY);
             e.preventDefault();
         }
 
@@ -704,6 +859,13 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         }
         $scope.updateMap();
         lastOpacity = opacity;
+    };
+    $scope.activeEraser = () => {
+        $scope.$settings.formView.eraserTile.visible = !$scope.$settings.formView.eraserTile.visible;
+        if(!$scope.$settings.formView.eraserTile.visible)
+            $scope.$settings.formView.eraserTile.enable = false;
+        else // ซ่อน Tile ที่เลือก
+            $scope.$settings.formView.selectedTile.visibleOnScreen = false;
     };
     //=========================================================
     //
@@ -960,12 +1122,13 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
          * @param {*} arImageData           Uint8ClampArray ที่ได้จาก getImageData
          */
         this.updateTileBy = (colIndex, rowIndex, layerImageIndex, arImageData) => {
+            if(colIndex < 0 || rowIndex < 0) return;
             var tileIndex = this.getTileIndexBy(colIndex, rowIndex);
             var tileItem = this.tiles[tileIndex];
             tileItem.flipTypeProps = _this.getTileFlipType(layerImageIndex);
 
             var tileCachedItem = null;
-            if(null === (tileCachedItem = _this.tileImagesCached[layerImageIndex] || null)){
+            if(layerImageIndex > 0 && null === (tileCachedItem = _this.tileImagesCached[layerImageIndex] || null)){
                 tileCachedItem = new TileImageCached(null, arImageData, tileItem.flipTypeProps);
                 tileCachedItem.canvas = _this.convertImageDataToImageObject(tileCachedItem.arImageData, _this.tileMapJson.tilewidth, _this.tileMapJson.tileheight, tileItem.flipTypeProps);
                 _this.tileImagesCached[layerImageIndex] = tileCachedItem;
@@ -977,14 +1140,15 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             tileItem.tileset = seekTileset(tileItem.imageIndex);
             tileItem.imageData = arImageData;
             
+            // คำนวณตำแหน่ง Tile บนแผนที่
             tileItem.point = _this.getPointBy(tileIndex + 1, _this.tileMapJson.width, _this.tileMapJson.tilewidth);
-            tileItem.visible = true;
-            tileItem.canvas = tileCachedItem.canvas;
+            tileItem.visible = tileCachedItem !== null;
+            tileItem.canvas = tileCachedItem ? tileCachedItem.canvas : null;
 
             // Update การเปลี่ยนแปลง Map เฉพาะ tile
             // ก่อนการเขียนค่า Tile เข้าไปใหม่ Clear Rect หากไม่ Clear จะทำให้เขียนภาพทับลงไป สีจะเข้มขึ้น
             _this.ctx.clearRect(tileItem.point.dx, tileItem.point.dy, _this.tileMapJson.tilewidth, _this.tileMapJson.tileheight);
-            tileItem.drawTile();
+            if(layerImageIndex > 0) tileItem.drawTile();
         };
 
         //this.initLayer(layerName, layerType, layerIndex, visible, isNew);
