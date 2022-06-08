@@ -53,24 +53,34 @@
             <div class="p-2 top-menu-bar bg-light position-fixed text-dark border-bottom shadow-sm">
                 <div class="d-flex flex-row">
                     <div>
-                        <fw-icon class="f-20 f-w-900 text-success border-right" icon="ti-map-alt" ng-click="loadMap()" tooltip-deprecate="<strong class='text-danger'>คลิกที่นี่</strong> โหลดไฟล์แผนที่ เพื่อนำมาแก้ไข">
+                        <fw-icon class="f-20 f-w-900 text-success border-right" icon="ti-map-alt" ng-click="loadMap()" tooltip="<strong class='text-danger'>คลิกที่นี่</strong> โหลดไฟล์แผนที่ เพื่อนำมาแก้ไข">
                             <div class="d-md-block f-8 d-none">โหลดแผนที่</div>
                         </fw-icon>
                     </div>
-                    <div>
+                    <!-- <div>
                         <fw-icon class="f-20 f-w-900 border-right" icon="ti-share" ng-click="exportMap()" tooltip-deprecate="ดาวน์โหลดไฟล์แผนที่ <strong class='text-danger'>จะโหลดได้เฉพาะมีการนำเข้าแผนที่แล้วเท่านั้น</strong>" ng-class="{'text-success': $settings.map.isReady, 'text-muted': !$settings.map.isReady}">
                             <div class="d-md-block f-8 d-none">ดาวน์โหลด</div>
                         </fw-icon>
-                    </div>
+                    </div> -->
                     <div>
-                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-panel" ng-click="$settings.formView.visibleMapProperty=!$settings.formView.visibleMapProperty" tooltip-deprecate="แสดงคุณสมบัติของแผนที่ เช่น Layer, Tilesets เป็นต้น" ng-class="{'text-success': $settings.map.isReady, 'text-muted': !$settings.map.isReady}">
+                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-panel" ng-click="$settings.formView.visibleMapProperty=!$settings.formView.visibleMapProperty" tooltip="แสดงคุณสมบัติของแผนที่ เช่น Layer, Tilesets เป็นต้น" ng-class="{'text-success': $settings.map.isReady, 'text-muted': !$settings.map.isReady}">
                             <div class="d-md-block f-8 d-none">คุณสมบัติแผนที่</div>
                         </fw-icon>
                     </div>
                     <div>
-                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-eraser" ng-click="activeEraser()" tooltip-deprecate="เปิด/ปิดการใช้งาน Eraser tile" ng-class="{'text-success': $settings.map.isReady && !$settings.formView.eraserTile.visible, 'text-danger': $settings.map.isReady && $settings.formView.eraserTile.visible, 'text-muted': !$settings.map.isReady}">
+                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-eraser" ng-click="activeEraser()" ng-mouseenter="toggleEraserSize(true)" tooltip="เปิด/ปิดการใช้งาน Eraser tile" ng-class="{'text-success': $settings.map.isReady && !$settings.formView.eraserTile.visible, 'text-danger': $settings.map.isReady && $settings.formView.eraserTile.visible, 'text-muted': !$settings.map.isReady}">
                             <div class="d-md-block f-8 d-none">ลบ Tile</div>
                         </fw-icon>
+                        <div class="position-absolute d-none f-12 box-shadow p-1 bg-light border" style="max-width:170px;width:170px;" ng-mouseenter="toggleEraserSize(true)" ng-mouseleave="toggleEraserSize(false)" ng-class="{'animated fadeIn': $settings.eraserResizeVisible, 'd-none': !$settings.eraserResizeVisible}">
+                            <div class="border-bottom mb-1 pb-1 text-base-color text-center">ปรับขนาดของยางลบ</div>
+                            <div class="d-flex flex-row">
+                                <div class="border cursor-pointer hover-animate" style="padding:2px" ng-click="eraserSize('min')"><fw-icon class="p-0 f-10" icon="" tooltip="">MIN</fw-icon></div>
+                                <div class="border cursor-pointer ml-1 hover-animate" style="padding:2px" ng-click="eraserSize('-1')"><fw-icon class="p-0 f-10" icon="ti-minus" tooltip=""></fw-icon></div>
+                                <div class="flex-grow-1 pl-1 pr-1 text-center f-w-900 text-base-color" style="line-height: 22px">{{$settings.formView.eraserTile.getSize()}}</div>
+                                <div class="border cursor-pointer hover-animate" style="padding:2px" ng-click="eraserSize('+1')"><fw-icon class="p-0 f-10" icon="ti-plus" tooltip=""></fw-icon></div>
+                                <div class="border cursor-pointer ml-1 hover-animate" style="padding:2px" ng-click="eraserSize('max')"><fw-icon class="p-0 f-10" icon="" tooltip="">MAX</fw-icon></div>
+                            </div>
+                        </div>
                     </div>
                     <div class="flex-fill mr-auto">&nbsp;</div>
                     <div class="d-none f-12 d-md-inline-block text-danger pt-2">{{$settings.formView.statusText}}</div>
@@ -81,10 +91,10 @@
                     <!-- map tools -->
                     <div class="border-right pt-0 pt-md-4 bg-light">
                         <div class="d-flex flex-row flex-md-column">
-                            <div><a href="javascript:void(0)" ng-click="reloadMap()" class="left-menu-item shadow-sm ti-reload" ng-class="{'text-muted': $settings.tileMapJson === ''}""><span
+                            <div><a href="javascript:void(0)" ng-click="resetAllChange()" class="left-menu-item ti-reload" ng-class="{'text-muted': $settings.tileMapJson === ''}" fw-tooltip-a="<strong class='text-danger'>ยกเลิก</strong> การเปลี่ยนแปลง หรือ แก้ไขแผนที่ทั้งหมด"><span
                                     class=" d-block mt-1 f-12">รีเซ็ต</span></a></div>
-                            <div><a href="javascript:void(0)" class="left-menu-item shadow-sm ti-save" ng-class="{'text-muted': $settings.tileMapJson===null}"><span class="d-block mt-1 f-12">บันทึก</span></a></div>
-                            <div><a href="javascript:void(0)" class="left-menu-item shadow-sm ti-power-off"><span class="d-block mt-1 f-12">ออก</span></a></div>
+                            <div><a href="javascript:void(0)" ng-click="saveMap()" class="left-menu-item ti-share" ng-class="{'text-muted': $settings.tileMapJson===null}"><span class="d-block mt-1 f-12">บันทึก</span></a></div>
+                            <div><a href="javascript:void(0)" ng-click="preview()" class="left-menu-item ti-eye text-muted"><span class="d-block mt-1 f-12">แสดงตัวอย่าง</span></a></div>
                         </div>
                     </div>
 

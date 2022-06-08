@@ -126,7 +126,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
                     return +a > +b ? -1 : 1;
                 });
             }
-               
+            
             const mapPos = seekMapPosByPoint(newPoint); // ตำแหน่ง column, row เริ่มต้นในการเขียน tile ลงบนแผนที่
             const tilesetColumnWidth = tileset.imagewidth / tileset.tilewidth; // จำนวนคอลัมล์ของแผนที่
             const flipTypes = renderFlipTypes();
@@ -314,6 +314,23 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             this.size = Math.max(minEraserSize, this.size);
             drawEraser();
         };
+        /**
+         * ต้องการลดขนาดของ Eraser -size, size เพิ่มขนาดของ Eraser
+         * @param {*} increaseStr -size (ลด), size (เพิ่ม)
+         */
+        this.newSizeByStr = (increaseStr) => {
+            const increaseVal = Math.abs(+increaseStr);
+            var size = this.getSize();
+            if(increaseStr[0] === '+') size += increaseVal;
+            else size -= increaseVal;
+
+            if(increaseStr === 'min') this.newSize(1);
+            else if(increaseStr === 'max') this.newSize(5);
+            else this.newSize(size);
+        };
+        this.getSize = () => {
+            return this.size / 32;
+        };
 
 
         /**
@@ -339,7 +356,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         var doEraserCallbackId = null;
         this.doEraser = (mapPoint, activeLayer, callback) => {
             if(!this.enable) return;
-            const sensitiveVal = this.size - 16;
+            const sensitiveVal = this.size - 1;
             var newPoint = $.extend(true, {}, mapPoint);
             newPoint.dx -= sensitiveVal;
             newPoint.dy -= sensitiveVal;
@@ -408,7 +425,12 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         }
     };
 
-
+    /**
+     * สร้าง Coordinate property
+     * @param {*} dx 
+     * @param {*} dy 
+     * @returns 
+     */
     const coordinate = (dx, dy) => {
         return {dx: dx, dy: dy};
     };
@@ -462,6 +484,13 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
         $scope.$settings.map.point = point;
         $scope.updateStatus(`[${point.dx+','+point.dy}], col: ${mapPos.columnIndex}, row: ${mapPos.rowIndex}`);
+    };
+
+    const applyUpdateStatusChange = (statusText) => {
+        if ($scope.$$phase)
+            $scope.updateStatus(statusText)
+        else
+            $scope.$apply($scope.updateStatus(statusText));
     };
 
 
@@ -608,7 +637,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
     document.addEventListener('keydown', (e) => {
         var key = (e.key || '').toUpperCase();
         if ('ESCAPE' === key) {
-            $scope.reloadMap();
+            //$scope.reloadMap();
 
             $scope.$settings.formView.selectedTile.clear();
             drawTileset();
@@ -635,12 +664,6 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
     // เมื่อ input file เปลี่ยนแปลง จะอ่านข้อมูลจากไฟล์ที่อัพโหลดตาม type (inputFile.type)
     $scope.$settings.inputFile.element.on('change', function (e) {
         if ('tileMap' === $scope.$settings.inputFile.type) {
-            const applyUpdateStatusChange = (statusText) => {
-                if ($scope.$$phase)
-                    $scope.updateStatus(statusText)
-                else
-                    $scope.$apply($scope.updateStatus(statusText));
-            };
             applyUpdateStatusChange('โหลดไฟล์แผนที่...');
 
             $scope.clearMap();
@@ -697,26 +720,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
                             $dialogService.danger(null, 'ไม่พบไฟล์ภาพ tileset ต่อไปนี้ มีผลทำให้การวาดแผนที่บางส่วนจะขาดหายไป =>  ' + tilesetNotFoundStr);
 
                         applyUpdateStatusChange('กำลังวาดแผนที่ ...');
-                        $scope.$settings.tileMapJson = tileMapJson;
-                        $scope.$settings.map.ordTileMapJson = tileMapJson;
-
-                        // กำหนดค่าเริ่มต้นให้เลือก Tileset ตัวแรก
-                        $scope.$settings.formView.selectedTileset = tileMapJson.tilesets[0];
-                        $timeout(drawTileset(), 100);
-
-                        $tileMapService.init($scope.$settings.map.ctx, tileMapJson).then((retContext) => {
-                            applyUpdateStatusChange();
-                            $timeout(() => {
-                                $scope.$settings.map.isReady = true;
-                            }, 2000);
-                            $tileMapService.cloneContext(retContext, $scope.$settings.map.primaryCtx);
-                            $scope.$settings.map.mapLayers = $tileMapService.getMapLayers();
-
-                            // กำหนด Layer เริ่มต้นเพื่อเตรียมรอการแก้ไข
-                            var findMapLayers = $scope.$settings.map.mapLayers.filter((item) => { return item.visible; });
-                            if(findMapLayers.length > 0) findMapLayers[0].isActive = true;
-                            $scope.$settings.formView.activeLayer = activeLayer();
-                        });
+                        $scope.initMap(tileMapJson);
                     });
 
 
@@ -736,16 +740,53 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         $scope.$settings.inputFile.element.click();
     };
     /**
-     * อ่านข้อมูลแผนที่ใหม่
+     * นำข้อมูล Map Json ไปวาดลงบน canvas และ init ค่าอื่นๆให้กับ editor
+     * @param {*} tileMapJson 
      */
-    $scope.reloadMap = function () {
+    $scope.initMap = (tileMapJson) => {
+        $scope.$settings.tileMapJson = tileMapJson;
+        $scope.$settings.map.ordTileMapJson = $.extend(true, {}, tileMapJson);
+
+        // กำหนดค่าเริ่มต้นให้เลือก Tileset ตัวแรก
+        $scope.$settings.formView.selectedTileset = tileMapJson.tilesets[0];
+        $timeout(drawTileset(), 100);
+
+        $tileMapService.init($scope.$settings.map.ctx, tileMapJson).then((retContext) => {
+            applyUpdateStatusChange();
+            $timeout(() => {
+                $scope.$settings.map.isReady = true;
+            }, 2000);
+            $tileMapService.cloneContext(retContext, $scope.$settings.map.primaryCtx);
+            $scope.$settings.map.mapLayers = $tileMapService.getMapLayers();
+
+            // กำหนด Layer เริ่มต้นเพื่อเตรียมรอการแก้ไข
+            var findMapLayers = $scope.$settings.map.mapLayers.filter((item) => {
+                return item.visible;
+            });
+            if (findMapLayers.length > 0) findMapLayers[0].isActive = true;
+            $scope.$settings.formView.activeLayer = activeLayer();
+        });
+    };
+    /**
+     * ยกเลิกการเปลี่ยนแปลงทั้งหมด
+     */
+    $scope.resetAllChange = function () {
         if (null === $scope.$settings.tileMapJson) {
             $scope.loadMap();
             return;
         }
+        if(!$scope.$settings.map.isReady) return;
 
-        $scope.$settings.map.scale = 1;
-        $scope.zoomLevel();
+        const tileMapJson = $.extend(true, {}, $scope.$settings.map.ordTileMapJson);
+        $scope.initMap(tileMapJson);
+
+        $scope.$settings.formView.selectedTile.clear();
+        $scope.$settings.formView.eraserTile.visible = false;
+        $scope.$settings.formView.eraserTile.enable = false;
+    };
+    $scope.saveMap = () => {
+        $tileMapService.updateMap();
+        $scope.exportMap();
     };
     $scope.zoomLevel = function () {
         if(!$scope.$settings.map.isReady) return;
@@ -801,7 +842,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 
         var link = $('<a href="javascript:void(0)" target="_blank" />');
         link[0].download = $scope.$settings.map.filename;
-        link[0].href = `data:text/json;base64,${btoa(JSON.stringify($scope.$settings.tileMapJson))}`;
+        link[0].href = `data:text/json;base64,${btoa(angular.toJson($scope.$settings.tileMapJson))}`;
         link[0].click();
     };
     /**
@@ -865,12 +906,27 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         $scope.updateMap();
         lastBlurLayerOpacity = opacity;
     };
+    // เปิดใช้งาน ยางลบ
     $scope.activeEraser = () => {
+        if(!$scope.$settings.map.isReady) return;
         $scope.$settings.formView.eraserTile.visible = !$scope.$settings.formView.eraserTile.visible;
         if(!$scope.$settings.formView.eraserTile.visible)
             $scope.$settings.formView.eraserTile.enable = false;
         else // ซ่อน Tile ที่เลือก
             $scope.$settings.formView.selectedTile.visibleOnScreen = false;
+    };
+    // ปรับขนาดของ Eraser
+    $scope.eraserSize = (newSizeStr) => {
+        $scope.$settings.formView.eraserTile.newSizeByStr(newSizeStr);
+    };
+    var toggleEraserSizeTimeoutId = null;
+    $scope.toggleEraserSize = (enable) => {
+        $timeout.cancel(toggleEraserSizeTimeoutId);
+        if(!enable)
+            toggleEraserSizeTimeoutId = $timeout(() => {
+                $scope.$settings.eraserResizeVisible = false;
+            }, 900);
+        else $scope.$settings.eraserResizeVisible = true;
     };
     //=========================================================
     //
@@ -966,8 +1022,8 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 }).run(($rootScope) => {
     $rootScope.$appSetting = {
         api: {
-            //baseRoute: 'http://localhost:3000/api/map-editor'
-            baseRoute: 'https://fw-map-editor.herokuapp.com/api/map-editor'
+            baseRoute: 'http://localhost:3000/api/map-editor'
+            //baseRoute: 'https://fw-map-editor.herokuapp.com/api/map-editor'
         }
     };
 }).service('$fileReaderService', function ($q, $dialogService) {
@@ -1087,7 +1143,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         this.name = null;
         this.type = null;
         this.opacity = 0;
-        this.index = null;
+        this.index = null; // ตำแหน่งของ layer ใน Map json file
         this.visible = false;
         this.isNew = false;
         this.isActive = false;
@@ -1102,7 +1158,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             this.name = layerName || null;
             this.type = layerType || null;
             this.opacity = opacity || 1;
-            this.index = layerIndex || null;
+            this.index = layerIndex === undefined ? null : layerIndex;
             this.visible = visible === undefined ? false : visible;
             this.isNew = isNew === undefined ? false : isNew; // true = เป็นการสร้าง Layer ใหม่ระหว่างการแก้ไข แผนที่
             this.isActive = false;
@@ -1119,6 +1175,15 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         this.getTileIndexBy = (colIndex, rowIndex) => {
             const mapWidth = _this.tileMapJson.width; // จำนวนคอลัมล์ในแผนที่ในแต่ละแถว
             return rowIndex * mapWidth + colIndex;
+        };
+
+        /**
+         * แปลงข้อมูล Tile ให้อยู่ในรูปแบบ Array
+         * จะใช้ layerImageIndex เป็นข้อมูลในการสร้าง Array แต่ละ Element
+         * @returns 
+         */
+        this.toLayerData = () => {
+            return this.tiles.map((tile) => { return tile.layerImageIndex; });
         };
 
         /**
@@ -1153,9 +1218,16 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             tileItem.canvas = tileCachedItem ? tileCachedItem.canvas : null;
 
             // Update การเปลี่ยนแปลง Map เฉพาะ tile
-            // ก่อนการเขียนค่า Tile เข้าไปใหม่ Clear Rect หากไม่ Clear จะทำให้เขียนภาพทับลงไป สีจะเข้มขึ้น
+            // ก่อนการเขียนค่า Tile เข้าไปใหม่ Clear Rect (ทำให้พื้นที่เป็น Transpacency) หากไม่ Clear จะทำให้เขียนภาพทับลงไป สีจะเข้มขึ้น
             _this.ctx.clearRect(tileItem.point.dx, tileItem.point.dy, _this.tileMapJson.tilewidth, _this.tileMapJson.tileheight);
-            if(layerImageIndex > 0) tileItem.drawTile();
+            //_this.ctx.putImageData(_this.createEmptyImg(_this.tileMapJson.tilewidth, _this.tileMapJson.tileheight), tileItem.point.dx, tileItem.point.dy);
+            if (layerImageIndex > 0) {
+                _this.ctx.save(); // Save canvas default option 
+                _this.ctx.globalCompositeOperation = 'source-over'; // ให้เขียนภาพไว้บน ตัวที่มีอยู่ใน Canvas (SendToTop)
+                _this.ctx.globalAlpha = this.opacity;
+                tileItem.drawToMap();
+                _this.ctx.restore(); // restore canvas option to default
+            }
         };
 
         //this.initLayer(layerName, layerType, layerIndex, visible, isNew);
@@ -1172,7 +1244,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
         this.point = null; // ตำแหน่ง x,y ที่จะวาลงบนแผนที่
         this.canvas = null; // ข้อมูล 
         this.visible = false;
-        this.drawTile = () => {
+        this.drawToMap = () => {
             if (!this.visible)
                 return;
 
@@ -1226,6 +1298,29 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
     this.clearAllRect = (ctx) => {
         if(!ctx) return;
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    };
+
+    /**
+     * ปรับปรุงการเปลี่ยนแปลงข้อมูล Layer เข้าไปในแผนที่
+     */
+    this.updateMap = () => {
+        for(var i = 0;i<this.mapLayers.length;i++){
+            const layer = this.mapLayers[i];
+            _this.tileMapJson.layers[layer.index].data = layer.toLayerData();
+        }
+    };
+
+    /**
+     * สร้างรูปภาพที่เป็น Transpacency ตามขนาดที่กำหนด
+     * จะได้ข้อมูลออกไปเป็น Uint8ClampArray หรือโครงสร้างเดียวกับ getImageData
+     * @param {*} width   ความกว้างของภาพ
+     * @param {*} height  ความสูงของภาพ
+     */
+    this.createEmptyImg = (width, height) => {
+        var img = this.ctx.createImageData(width, height);
+        // for(var i = img.data.length;i<=0;i--)
+        //     img.data[i] = 0;
+        return img;
     };
 
     this.cloneContext = (source, target) => {
@@ -1478,6 +1573,13 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
      * @returns     Inmemory - canvas
      */
     this.convertImageDataToImageObject = (arImgData, toWidth, toHeight, flipTypeProps) => {
+        // var count = 0;
+        // do{
+        //     if(arImgData[count] === 255 && arImgData[count+1] === 255 && arImgData[count+2] === 255)
+        //         arImgData.data[count + 3] = 0; // 
+        //     count += 4;
+        // }while(count <= arImgData.data.length);
+
         // เขียน arImgData ลงบน Canvas เพื่ออาศัยความสามารถของ Canvas
         // แปลงข้อมูลที่อยู่บน Canvas ให้เป็น Base64Data 
         // สำหรับส่งข้อมูลให้ ImageData
@@ -1551,7 +1653,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
             _this.ctx.globalCompositeOperation = 'source-over'; // ให้เขียนภาพไว้บน ตัวที่มีอยู่ใน Canvas (SendToTop)
             _this.ctx.globalAlpha = layer.opacity;
             for(var x = 0; x < layer.tiles.length; x++)
-                layer.tiles[x].drawTile();
+                layer.tiles[x].drawToMap();
             _this.ctx.restore(); // restore canvas option to default
         }
 

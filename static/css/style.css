@@ -72,6 +72,15 @@
     cursor:move!important;
 }
 
+.text-base-color{
+    color: #23923C;
+}
+*.hover-animate:hover{
+    color: #28a745!important;
+    box-shadow: 0px 0px 10px 1px #28a745;
+    transition: 0.7s;
+}
+
 /**
  * Customize scrollbar
  *
@@ -132,12 +141,17 @@ a:link.left-menu-item {
     text-decoration: none;
     color: #343a40 !important;
     text-align: center;
+    margin-bottom: 2px;
+    box-shadow: 0 .125rem .25rem rgba(0,0,0,.075);
 }
 
 a:hover.left-menu-item,
 a:active.left-menu-item {
     color: #28a745 !important;
     background-color: #f8f9fa !important;
+    box-shadow: 0px 0px 10px 5px #28a745!important;
+    border-bottom: none!important;
+    transition: 0.6s;
 }
 
 .top-menu-bar {
