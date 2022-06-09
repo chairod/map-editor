@@ -919,14 +919,42 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
     $scope.eraserSize = (newSizeStr) => {
         $scope.$settings.formView.eraserTile.newSizeByStr(newSizeStr);
     };
+    // แสดงเครื่องมือปรับขนาดของ Eraser
     var toggleEraserSizeTimeoutId = null;
-    $scope.toggleEraserSize = (enable) => {
+    $scope.toggleEraserSize = (enable, immediate) => {
         $timeout.cancel(toggleEraserSizeTimeoutId);
-        if(!enable)
+
+        if(!enable){
+            if(immediate){
+                $scope.$settings.eraserResizeVisible = false;
+                return;
+            }
+
             toggleEraserSizeTimeoutId = $timeout(() => {
                 $scope.$settings.eraserResizeVisible = false;
             }, 900);
+        }
         else $scope.$settings.eraserResizeVisible = true;
+    };
+    // แสดง/ซ่อน คุณสมบัติแผนที่
+    var toggleMapPropertyTimeoutId = null;
+    $scope.toggleMapProperty = (enable, immediate) => {
+        $timeout.cancel(toggleMapPropertyTimeoutId);
+        if(!$scope.$settings.map.isReady) return;
+        
+        if(!enable){
+            if($scope.$settings.formView.resizingMapProperty) return;
+            if(immediate){
+                $scope.$settings.formView.visibleMapProperty = false;
+                return;
+            }
+
+            toggleMapPropertyTimeoutId = $timeout(() => {
+                $scope.$settings.formView.visibleMapProperty = false;
+            }, 1800);
+        }else{
+            $scope.$settings.formView.visibleMapProperty = true;
+        }
     };
     //=========================================================
     //
@@ -1022,8 +1050,8 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 }).run(($rootScope) => {
     $rootScope.$appSetting = {
         api: {
-            //baseRoute: 'http://localhost:3000/api/map-editor'
-            baseRoute: 'https://fw-map-editor.herokuapp.com/api/map-editor'
+            baseRoute: 'http://localhost:3000/api/map-editor'
+            //baseRoute: 'https://fw-map-editor.herokuapp.com/api/map-editor'
         }
     };
 }).service('$fileReaderService', function ($q, $dialogService) {

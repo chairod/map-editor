@@ -53,7 +53,7 @@
             <div class="p-2 top-menu-bar bg-light position-fixed text-dark border-bottom shadow-sm">
                 <div class="d-flex flex-row">
                     <div>
-                        <fw-icon class="f-20 f-w-900 text-success border-right" icon="ti-map-alt" ng-click="loadMap()" tooltip="<strong class='text-danger'>คลิกที่นี่</strong> โหลดไฟล์แผนที่ เพื่อนำมาแก้ไข">
+                        <fw-icon class="f-20 f-w-900 text-success border-right" icon="ti-map-alt" ng-click="loadMap()" tooltip-deprecate="<strong class='text-danger'>คลิกที่นี่</strong> โหลดไฟล์แผนที่ เพื่อนำมาแก้ไข">
                             <div class="d-md-block f-8 d-none">โหลดแผนที่</div>
                         </fw-icon>
                     </div>
@@ -63,16 +63,21 @@
                         </fw-icon>
                     </div> -->
                     <div>
-                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-panel" ng-click="$settings.formView.visibleMapProperty=!$settings.formView.visibleMapProperty" tooltip="แสดงคุณสมบัติของแผนที่ เช่น Layer, Tilesets เป็นต้น" ng-class="{'text-success': $settings.map.isReady, 'text-muted': !$settings.map.isReady}">
+                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-panel" ng-click="toggleMapProperty(false, true)" ng-mouseenter="toggleMapProperty(true)" tooltip-deprecate="แสดงคุณสมบัติของแผนที่ เช่น Layer, Tilesets เป็นต้น" ng-class="{'text-success': $settings.map.isReady, 'text-muted': !$settings.map.isReady}">
                             <div class="d-md-block f-8 d-none">คุณสมบัติแผนที่</div>
                         </fw-icon>
                     </div>
                     <div>
-                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-eraser" ng-click="activeEraser()" ng-mouseenter="toggleEraserSize(true)" tooltip="เปิด/ปิดการใช้งาน Eraser tile" ng-class="{'text-success': $settings.map.isReady && !$settings.formView.eraserTile.visible, 'text-danger': $settings.map.isReady && $settings.formView.eraserTile.visible, 'text-muted': !$settings.map.isReady}">
+                        <fw-icon class="f-20 f-w-900 border-right" icon="ti-eraser" ng-click="activeEraser()" ng-mouseenter="toggleEraserSize(true)" tooltip-deprecate="เปิด/ปิดการใช้งาน Eraser tile" ng-class="{'text-success': $settings.map.isReady && !$settings.formView.eraserTile.visible, 'text-danger': $settings.map.isReady && $settings.formView.eraserTile.visible, 'text-muted': !$settings.map.isReady}">
                             <div class="d-md-block f-8 d-none">ลบ Tile</div>
                         </fw-icon>
                         <div class="position-absolute d-none f-12 box-shadow p-1 bg-light border" style="max-width:170px;width:170px;" ng-mouseenter="toggleEraserSize(true)" ng-mouseleave="toggleEraserSize(false)" ng-class="{'animated fadeIn': $settings.eraserResizeVisible, 'd-none': !$settings.eraserResizeVisible}">
-                            <div class="border-bottom mb-1 pb-1 text-base-color text-center">ปรับขนาดของยางลบ</div>
+                            <div class="border-bottom mb-1 pb-1 text-base-color text-center">
+                                <div class="d-flex flex-row">
+                                    <div class="flex-grow-1 mr-auto">ปรับขนาดของยางลบ</div>
+                                    <div><span class="ml-1 f-w-900 text-danger ion-close cursor-pointer hover-animate" ng-click="toggleEraserSize(false, true)"></span></div>
+                                </div> 
+                            </div>
                             <div class="d-flex flex-row">
                                 <div class="border cursor-pointer hover-animate" style="padding:2px" ng-click="eraserSize('min')"><fw-icon class="p-0 f-10" icon="" tooltip="">MIN</fw-icon></div>
                                 <div class="border cursor-pointer ml-1 hover-animate" style="padding:2px" ng-click="eraserSize('-1')"><fw-icon class="p-0 f-10" icon="ti-minus" tooltip=""></fw-icon></div>
@@ -107,7 +112,7 @@
                 </div>
 
                 <!-- Map Property (Tilesets & Layers) -->
-                <div id="mapPropertyPanel" ng-mouseleave="$settings.formView.visibleMapProperty=$settings.autoHideMapProperty!=='Y' || $settings.formView.resizingMapProperty" class="position-absolute shadow-sm w-100 p-2 pt-3 bg-light animated slideInLeft overflow-auto no-scrollbar d-none" ng-class="{'d-none': !$settings.formView.visibleMapProperty}" style="width:auto;max-width:350px;top:0px;left:0px;height:calc(100vh - 45px);">
+                <div id="mapPropertyPanel" ng-mouseleave="$settings.autoHideMapProperty==='Y' ? toggleMapProperty(false) : ''" ng-mouseenter="toggleMapProperty(true)" class="position-absolute shadow-sm w-100 p-2 pt-3 bg-light animated slideInLeft overflow-auto no-scrollbar d-none" ng-class="{'d-none': !$settings.formView.visibleMapProperty}" style="width:auto;max-width:350px;top:0px;left:0px;height:calc(100vh - 45px);">
                     <!-- Resize panel -->
                     <div id="resizeMapPropertyPanel" ng-mousedown="$settings.formView.resizingMapProperty=true" class="bg-dark cursor-col-resize position-absolute d-none d-md-inline-block" style="right:0;top:0;width:4px;max-width:4px;min-width:4px;height:calc(100% + 155px)">&nbsp;</div>
                     <div class="d-flex flex-row">
