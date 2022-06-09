@@ -941,7 +941,7 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
     $scope.toggleMapProperty = (enable, immediate) => {
         $timeout.cancel(toggleMapPropertyTimeoutId);
         if(!$scope.$settings.map.isReady) return;
-        
+
         if(!enable){
             if($scope.$settings.formView.resizingMapProperty) return;
             if(immediate){
@@ -1050,8 +1050,8 @@ angular.module('AppEditor', []).controller('EditorController', ($scope, $timeout
 }).run(($rootScope) => {
     $rootScope.$appSetting = {
         api: {
-            baseRoute: 'http://localhost:3000/api/map-editor'
-            //baseRoute: 'https://fw-map-editor.herokuapp.com/api/map-editor'
+            //baseRoute: 'http://localhost:3000/api/map-editor'
+            baseRoute: 'https://fw-map-editor.herokuapp.com/api/map-editor'
         }
     };
 }).service('$fileReaderService', function ($q, $dialogService) {
